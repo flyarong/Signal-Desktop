@@ -1,6 +1,10 @@
+// Copyright 2017-2020 Signal Messenger, LLC
+// SPDX-License-Identifier: AGPL-3.0-only
+
 const path = require('path');
 const fs = require('fs');
 const _ = require('lodash');
+const { setup } = require('../js/modules/i18n');
 
 function normalizeLocaleName(locale) {
   if (/^en-/.test(locale)) {
@@ -58,7 +62,10 @@ function load({ appLocale, logger } = {}) {
     messages = english;
   }
 
+  const i18n = setup(appLocale, messages);
+
   return {
+    i18n,
     name: localeName,
     messages,
   };

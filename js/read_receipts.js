@@ -1,18 +1,18 @@
+// Copyright 2016-2020 Signal Messenger, LLC
+// SPDX-License-Identifier: AGPL-3.0-only
+
 /* global
   Whisper,
   Backbone,
   _,
   ConversationController,
   MessageController,
-  window
 */
 
 /* eslint-disable more/no-then */
 
 // eslint-disable-next-line func-names
-(function() {
-  'use strict';
-
+(function () {
   window.Whisper = window.Whisper || {};
   Whisper.ReadReceipts = new (Backbone.Collection.extend({
     forMessage(conversation, message) {
@@ -23,7 +23,7 @@
       if (conversation.isPrivate()) {
         ids = [conversation.id];
       } else {
-        ids = conversation.get('members');
+        ids = conversation.getMemberIds();
       }
       const receipts = this.filter(
         receipt =>

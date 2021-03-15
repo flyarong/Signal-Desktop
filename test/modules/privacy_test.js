@@ -1,3 +1,6 @@
+// Copyright 2018-2020 Signal Messenger, LLC
+// SPDX-License-Identifier: AGPL-3.0-only
+
 const path = require('path');
 
 const { assert } = require('chai');
@@ -17,6 +20,20 @@ describe('Privacy', () => {
       const expected =
         'This is a log line with a phone number +[REDACTED]455\n' +
         'and another one +[REDACTED]566';
+      assert.equal(actual, expected);
+    });
+  });
+
+  describe('redactUuids', () => {
+    it('should redact all uuids', () => {
+      const text =
+        'This is a log line with a uuid 9e420799-acdf-4bf4-8dee-353d7e2096b4\n' +
+        'and another one IN ALL UPPERCASE 340727FB-E43A-413B-941B-AADA033B6CA3';
+
+      const actual = Privacy.redactUuids(text);
+      const expected =
+        'This is a log line with a uuid [REDACTED]6b4\n' +
+        'and another one IN ALL UPPERCASE [REDACTED]CA3';
       assert.equal(actual, expected);
     });
   });
@@ -43,6 +60,18 @@ describe('Privacy', () => {
       const expected =
         'This is a log line with two group IDs: group([REDACTED]789)\n' +
         'and group([REDACTED]hij)';
+      assert.equal(actual, expected);
+    });
+
+    it('should remove newlines from redacted group V2 IDs', () => {
+      const text =
+        'This is a log line with three group IDs: groupv2(abcd32341a==)\n' +
+        'and groupv2(abcd32341ad=) and and groupv2(abcd32341ade)';
+
+      const actual = Privacy.redactGroupIds(text);
+      const expected =
+        'This is a log line with three group IDs: groupv2([REDACTED]41a==)\n' +
+        'and groupv2([REDACTED]1ad=) and and groupv2([REDACTED]ade)';
       assert.equal(actual, expected);
     });
   });

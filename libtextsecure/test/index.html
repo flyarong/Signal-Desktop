@@ -1,3 +1,6 @@
+<!-- Copyright 2015-2020 Signal Messenger, LLC -->
+<!-- SPDX-License-Identifier: AGPL-3.0-only -->
+
 <html>
 
 <head>
@@ -19,21 +22,17 @@
 
   <script type="text/javascript" src="../components.js"></script>
   <script type="text/javascript" src="../libsignal-protocol.js"></script>
-  <script type="text/javascript" src="../crypto.js"></script>
   <script type="text/javascript" src="../protobufs.js" data-cover></script>
-  <script type="text/javascript" src="../errors.js" data-cover></script>
-  <script type="text/javascript" src="../storage.js" data-cover></script>
+  <script type="text/javascript" src="../storage/user.js" data-cover></script>
   <script type="text/javascript" src="../protocol_wrapper.js" data-cover></script>
 
-  <script type="text/javascript" src="../event_target.js" data-cover></script>
-  <script type="text/javascript" src="../websocket-resources.js" data-cover></script>
-  <script type="text/javascript" src="../helpers.js" data-cover></script>
-  <script type="text/javascript" src="../stringview.js" data-cover></script>
-  <script type="text/javascript" src="../api.js"></script>
-  <script type="text/javascript" src="../sendmessage.js" data-cover></script>
-  <script type="text/javascript" src="../account_manager.js" data-cover></script>
-  <script type="text/javascript" src="../contacts_parser.js" data-cover></script>
-  <script type="text/javascript" src="../task_with_timeout.js" data-cover></script>
+  <script type="text/javascript" src="../../js/libphonenumber-util.js"></script>
+  <script type="text/javascript" src="../../js/components.js" data-cover></script>
+  <script type="text/javascript" src="../../js/signal_protocol_store.js" data-cover></script>
+  <script type="text/javascript" src="../../js/storage.js" data-cover></script>
+  <script type="text/javascript" src="../../js/models/blockedNumbers.js" data-cover></script>
+  <script type="text/javascript" src="../../js/models/messages.js" data-cover></script>
+  <script type="text/javascript" src="../../js/models/conversations.js" data-cover></script>
 
   <script type="text/javascript" src="errors_test.js"></script>
   <script type="text/javascript" src="helpers_test.js"></script>
@@ -53,7 +52,10 @@
 
   <!-- Uncomment to start tests without code coverage enabled -->
   <script type="text/javascript">
-    mocha.run();
+    window.textsecure.protobuf.onLoad(() => {
+      mocha.run();
+      window.Signal.conversationControllerStart();
+    });
   </script>
 </body>
 </html>

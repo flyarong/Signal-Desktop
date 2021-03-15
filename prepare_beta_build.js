@@ -1,12 +1,15 @@
+// Copyright 2018-2020 Signal Messenger, LLC
+// SPDX-License-Identifier: AGPL-3.0-only
+
 /* eslint-disable no-console */
 
 const fs = require('fs');
 const _ = require('lodash');
 
 const packageJson = require('./package.json');
+const { isBeta } = require('./ts/util/version');
 
 const { version } = packageJson;
-const beta = /beta/;
 
 // You might be wondering why this file is necessary. It comes down to our desire to allow
 //   side-by-side installation of production and beta builds. Electron-Builder uses
@@ -14,7 +17,7 @@ const beta = /beta/;
 //   debian package name, the install directory under /opt on linux, etc. We tried
 //   adding the ${channel} macro to these values, but Electron-Builder didn't like that.
 
-if (!beta.test(version)) {
+if (!isBeta(version)) {
   process.exit();
 }
 

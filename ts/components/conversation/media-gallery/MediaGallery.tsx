@@ -1,3 +1,6 @@
+// Copyright 2018-2020 Signal Messenger, LLC
+// SPDX-License-Identifier: AGPL-3.0-only
+
 import React from 'react';
 import classNames from 'classnames';
 
@@ -12,22 +15,23 @@ import { LocalizerType } from '../../../types/Util';
 
 import { MediaItemType } from '../../LightboxGallery';
 
-interface Props {
+export type Props = {
   documents: Array<MediaItemType>;
   i18n: LocalizerType;
   media: Array<MediaItemType>;
-  onItemClick?: (event: ItemClickEvent) => void;
-}
 
-interface State {
+  onItemClick?: (event: ItemClickEvent) => void;
+};
+
+type State = {
   selectedTab: 'media' | 'documents';
-}
+};
 
 const MONTH_FORMAT = 'MMMM YYYY';
 
-interface TabSelectEvent {
+type TabSelectEvent = {
   type: 'media' | 'documents';
-}
+};
 
 const Tab = ({
   isSelected,
@@ -47,6 +51,8 @@ const Tab = ({
     : undefined;
 
   return (
+    // Has key events handled elsewhere
+    // eslint-disable-next-line jsx-a11y/click-events-have-key-events
     <div
       className={classNames(
         'module-media-gallery__tab',
@@ -54,6 +60,7 @@ const Tab = ({
       )}
       onClick={handleClick}
       role="tab"
+      tabIndex={0}
     >
       {label}
     </div>
@@ -61,15 +68,30 @@ const Tab = ({
 };
 
 export class MediaGallery extends React.Component<Props, State> {
-  public state: State = {
-    selectedTab: 'media',
-  };
+  public readonly focusRef: React.RefObject<HTMLDivElement> = React.createRef();
 
-  public render() {
+  constructor(props: Props) {
+    super(props);
+    this.state = {
+      selectedTab: 'media',
+    };
+  }
+
+  public componentDidMount(): void {
+    // When this component is created, it's initially not part of the DOM, and then it's
+    //   added off-screen and animated in. This ensures that the focus takes.
+    setTimeout(() => {
+      if (this.focusRef.current) {
+        this.focusRef.current.focus();
+      }
+    });
+  }
+
+  public render(): JSX.Element {
     const { selectedTab } = this.state;
 
     return (
-      <div className="module-media-gallery">
+      <div className="module-media-gallery" tabIndex={-1} ref={this.focusRef}>
         <div className="module-media-gallery__tab-container">
           <Tab
             label="Media"

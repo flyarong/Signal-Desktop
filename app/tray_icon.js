@@ -1,8 +1,11 @@
+// Copyright 2017-2021 Signal Messenger, LLC
+// SPDX-License-Identifier: AGPL-3.0-only
+
 const path = require('path');
 
 const fs = require('fs');
 const { app, Menu, Tray } = require('electron');
-const dockIcon = require('./dock_icon');
+const dockIcon = require('../ts/dock_icon');
 
 let trayContextMenu = null;
 let tray = null;
@@ -68,7 +71,9 @@ function createTrayIcon(getMainWindow, messages) {
     trayContextMenu = Menu.buildFromTemplate([
       {
         id: 'toggleWindowVisibility',
-        label: messages[mainWindow.isVisible() ? 'hide' : 'show'].message,
+        label:
+          messages[mainWindow && mainWindow.isVisible() ? 'hide' : 'show']
+            .message,
         click: tray.toggleWindowVisibility,
       },
       {

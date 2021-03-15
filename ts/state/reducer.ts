@@ -1,56 +1,32 @@
+// Copyright 2019-2020 Signal Messenger, LLC
+// SPDX-License-Identifier: AGPL-3.0-only
+
 import { combineReducers } from 'redux';
 
-import {
-  ConversationActionType,
-  ConversationsStateType,
-  reducer as conversations,
-} from './ducks/conversations';
-import {
-  EmojisActionType,
-  EmojisStateType,
-  reducer as emojis,
-} from './ducks/emojis';
-import {
-  ItemsActionType,
-  ItemsStateType,
-  reducer as items,
-} from './ducks/items';
-import {
-  reducer as search,
-  SEARCH_TYPES as SearchActionType,
-  SearchStateType,
-} from './ducks/search';
-import {
-  reducer as stickers,
-  StickersActionType,
-  StickersStateType,
-} from './ducks/stickers';
-import { reducer as user, UserStateType } from './ducks/user';
+import { reducer as calling } from './ducks/calling';
+import { reducer as conversations } from './ducks/conversations';
+import { reducer as emojis } from './ducks/emojis';
+import { reducer as expiration } from './ducks/expiration';
+import { reducer as items } from './ducks/items';
+import { reducer as network } from './ducks/network';
+import { reducer as safetyNumber } from './ducks/safetyNumber';
+import { reducer as search } from './ducks/search';
+import { reducer as stickers } from './ducks/stickers';
+import { reducer as updates } from './ducks/updates';
+import { reducer as user } from './ducks/user';
 
-export type StateType = {
-  conversations: ConversationsStateType;
-  emojis: EmojisStateType;
-  items: ItemsStateType;
-  search: SearchStateType;
-  stickers: StickersStateType;
-  user: UserStateType;
-};
-
-export type ActionsType =
-  | EmojisActionType
-  | ConversationActionType
-  | ItemsActionType
-  | StickersActionType
-  | SearchActionType;
-
-export const reducers = {
+export const reducer = combineReducers({
+  calling,
   conversations,
   emojis,
+  expiration,
   items,
+  network,
+  safetyNumber,
   search,
   stickers,
+  updates,
   user,
-};
+});
 
-// @ts-ignore: AnyAction breaks strong type checking inside reducers
-export const reducer = combineReducers<StateType, ActionsType>(reducers);
+export type StateType = ReturnType<typeof reducer>;

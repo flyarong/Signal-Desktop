@@ -1,10 +1,11 @@
+// Copyright 2014-2020 Signal Messenger, LLC
+// SPDX-License-Identifier: AGPL-3.0-only
+
 /* global _ */
 /* eslint-disable more/no-then */
 
 // eslint-disable-next-line func-names
-(function() {
-  'use strict';
-
+(function () {
   window.Whisper = window.Whisper || {};
 
   let ready = false;
@@ -15,7 +16,7 @@
 
   async function put(key, value) {
     if (value === undefined) {
-      throw new Error('Tried to store undefined');
+      window.log.warn(`storage/put: undefined provided for key ${key}`);
     }
     if (!ready) {
       window.log.warn('Called storage.put before storage is ready. key:', key);

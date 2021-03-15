@@ -1,72 +1,61 @@
+// Copyright 2018-2021 Signal Messenger, LLC
+// SPDX-License-Identifier: AGPL-3.0-only
+
 /* global window */
+
+window.React = require('react');
+window.ReactDOM = require('react-dom');
 
 const { ipcRenderer, remote } = require('electron');
 const url = require('url');
 const i18n = require('./js/modules/i18n');
+const { ConfirmationModal } = require('./ts/components/ConfirmationModal');
+const { makeGetter, makeSetter } = require('./preload_utils');
+const {
+  getEnvironment,
+  setEnvironment,
+  parseEnvironment,
+} = require('./ts/environment');
 
-const { systemPreferences } = remote.require('electron');
+const { nativeTheme } = remote.require('electron');
 
 const config = url.parse(window.location.toString(), true).query;
 const { locale } = config;
 const localeMessages = ipcRenderer.sendSync('locale-data');
+setEnvironment(parseEnvironment(config.environment));
 
+window.getEnvironment = getEnvironment;
 window.getVersion = () => config.version;
 window.theme = config.theme;
 window.i18n = i18n.setup(locale, localeMessages);
+window.forCalling = config.forCalling === 'true';
+window.forCamera = config.forCamera === 'true';
+window.Signal = {
+  Components: {
+    ConfirmationModal,
+  },
+};
 
 function setSystemTheme() {
-  window.systemTheme = systemPreferences.isDarkMode() ? 'dark' : 'light';
+  window.systemTheme = nativeTheme.shouldUseDarkColors ? 'dark' : 'light';
 }
 
 setSystemTheme();
 
 window.subscribeToSystemThemeChange = fn => {
-  if (!systemPreferences.subscribeNotification) {
-    return;
-  }
-  systemPreferences.subscribeNotification(
-    'AppleInterfaceThemeChangedNotification',
-    () => {
-      setSystemTheme();
-      fn();
-    }
-  );
+  nativeTheme.on('updated', () => {
+    setSystemTheme();
+    fn();
+  });
 };
 
-require('./js/logging');
+require('./ts/logging/set_up_renderer_logging');
 
 window.closePermissionsPopup = () =>
   ipcRenderer.send('close-permissions-popup');
 
-window.getMediaPermissions = makeGetter('media-permissions');
 window.setMediaPermissions = makeSetter('media-permissions');
+window.setMediaCameraPermissions = makeSetter('media-camera-permissions');
 window.getThemeSetting = makeGetter('theme-setting');
 window.setThemeSetting = makeSetter('theme-setting');
-
-function makeGetter(name) {
-  return () =>
-    new Promise((resolve, reject) => {
-      ipcRenderer.once(`get-success-${name}`, (event, error, value) => {
-        if (error) {
-          return reject(error);
-        }
-
-        return resolve(value);
-      });
-      ipcRenderer.send(`get-${name}`);
-    });
-}
-
-function makeSetter(name) {
-  return value =>
-    new Promise((resolve, reject) => {
-      ipcRenderer.once(`set-success-${name}`, (event, error) => {
-        if (error) {
-          return reject(error);
-        }
-
-        return resolve();
-      });
-      ipcRenderer.send(`set-${name}`, value);
-    });
-}
+window.Backbone = require('backbone');

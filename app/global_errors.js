@@ -1,3 +1,6 @@
+// Copyright 2018-2020 Signal Messenger, LLC
+// SPDX-License-Identifier: AGPL-3.0-only
+
 const electron = require('electron');
 
 const Errors = require('../js/modules/types/errors');
@@ -10,6 +13,9 @@ let quitText = 'Quit';
 let copyErrorAndQuitText = 'Copy error and quit';
 
 function handleError(prefix, error) {
+  if (console._error) {
+    console._error(`${prefix}:`, Errors.toLogFormat(error));
+  }
   console.error(`${prefix}:`, Errors.toLogFormat(error));
 
   if (app.isReady()) {

@@ -1,3 +1,6 @@
+// Copyright 2018-2020 Signal Messenger, LLC
+// SPDX-License-Identifier: AGPL-3.0-only
+
 /* global libsignal, textsecure */
 
 'use strict';
@@ -170,7 +173,7 @@ describe('SecretSessionCipher', () => {
 
     const ciphertext = await aliceCipher.encrypt(
       new libsignal.SignalProtocolAddress('+14152222222', 1),
-      senderCertificate,
+      { serialized: senderCertificate.serialized },
       bytesFromString('smert za smert')
     );
 
@@ -212,7 +215,7 @@ describe('SecretSessionCipher', () => {
 
     const ciphertext = await aliceCipher.encrypt(
       new libsignal.SignalProtocolAddress('+14152222222', 1),
-      senderCertificate,
+      { serialized: senderCertificate.serialized },
       bytesFromString('и вот я')
     );
 
@@ -252,7 +255,7 @@ describe('SecretSessionCipher', () => {
 
     const ciphertext = await aliceCipher.encrypt(
       new libsignal.SignalProtocolAddress('+14152222222', 1),
-      senderCertificate,
+      { serialized: senderCertificate.serialized },
       bytesFromString('и вот я')
     );
 
@@ -291,7 +294,7 @@ describe('SecretSessionCipher', () => {
 
     const ciphertext = await aliceCipher.encrypt(
       new libsignal.SignalProtocolAddress('+14152222222', 1),
-      senderCertificate,
+      { serialized: senderCertificate.serialized },
       bytesFromString('smert za smert')
     );
 

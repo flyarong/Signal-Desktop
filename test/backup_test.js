@@ -1,4 +1,7 @@
-/* global Signal, Whisper, assert, textsecure, _, libsignal */
+// Copyright 2017-2020 Signal Messenger, LLC
+// SPDX-License-Identifier: AGPL-3.0-only
+
+/* global Signal, Whisper, textsecure, _, libsignal */
 
 /* eslint-disable no-console */
 
@@ -65,7 +68,7 @@ describe('Backup', () => {
       };
       const index = 0;
       const attachment = {
-        id: '123',
+        cdnId: '123',
       };
       const expected = '123';
 
@@ -77,13 +80,13 @@ describe('Backup', () => {
       assert.strictEqual(actual, expected);
     });
 
-    it('uses filename and contentType if available', () => {
+    it('uses attachment id and contentType if available', () => {
       const message = {
         body: 'something',
       };
       const index = 0;
       const attachment = {
-        id: '123',
+        cdnId: '123',
         contentType: 'image/jpeg',
       };
       const expected = '123.jpeg';
@@ -102,10 +105,47 @@ describe('Backup', () => {
       };
       const index = 0;
       const attachment = {
-        id: '123',
+        cdnId: '123',
         contentType: 'something',
       };
       const expected = '123.something';
+
+      const actual = Signal.Backup._getExportAttachmentFileName(
+        message,
+        index,
+        attachment
+      );
+      assert.strictEqual(actual, expected);
+    });
+
+    it('uses CDN key if attachment ID not available', () => {
+      const message = {
+        body: 'something',
+      };
+      const index = 0;
+      const attachment = {
+        cdnKey: 'abc',
+      };
+      const expected = 'abc';
+
+      const actual = Signal.Backup._getExportAttachmentFileName(
+        message,
+        index,
+        attachment
+      );
+      assert.strictEqual(actual, expected);
+    });
+
+    it('uses CDN key and contentType if available', () => {
+      const message = {
+        body: 'something',
+      };
+      const index = 0;
+      const attachment = {
+        cdnKey: 'def',
+        contentType: 'image/jpeg',
+      };
+      const expected = 'def.jpeg';
 
       const actual = Signal.Backup._getExportAttachmentFileName(
         message,
@@ -239,18 +279,29 @@ describe('Backup', () => {
     it('exports then imports to produce the same data we started with', async function thisNeeded() {
       this.timeout(6000);
 
-      const { attachmentsPath, fse, glob, path, tmp } = window.test;
+      const {
+        attachmentsPath,
+        fse,
+        fastGlob,
+        normalizePath,
+        path,
+        tmp,
+      } = window.test;
       const {
         upgradeMessageSchema,
         loadAttachmentData,
       } = window.Signal.Migrations;
 
       const staticKeyPair = await libsignal.KeyHelper.generateIdentityKeyPair();
-      const attachmentsPattern = path.join(attachmentsPath, '**');
+      const attachmentsPattern = normalizePath(
+        path.join(attachmentsPath, '**')
+      );
 
       const OUR_NUMBER = '+12025550000';
       const CONTACT_ONE_NUMBER = '+12025550001';
       const CONTACT_TWO_NUMBER = '+12025550002';
+
+      const CONVERSATION_ID = 'bdaa7f4f-e9bd-493e-ab0d-8331ad604269';
 
       const toArrayBuffer = nodeBuffer =>
         nodeBuffer.buffer.slice(
@@ -315,21 +366,24 @@ describe('Backup', () => {
               return attachment;
             }
 
-            return Object.assign({}, attachment, {
+            return {
+              ...attachment,
               thumbnail: await mapper(attachment.thumbnail, context),
-            });
+            };
           };
 
           const quotedAttachments =
             (message.quote && message.quote.attachments) || [];
 
-          return Object.assign({}, message, {
-            quote: Object.assign({}, message.quote, {
+          return {
+            ...message,
+            quote: {
+              ...message.quote,
               attachments: await Promise.all(
                 quotedAttachments.map(wrappedMapper)
               ),
-            }),
-          });
+            },
+          };
         };
       }
 
@@ -343,17 +397,20 @@ describe('Backup', () => {
           return wrappedLoadAttachment(thumbnail);
         });
 
-        return Object.assign({}, await loadThumbnails(message), {
+        return {
+          ...(await loadThumbnails(message)),
           contact: await Promise.all(
             (message.contact || []).map(async contact => {
               return contact && contact.avatar && contact.avatar.avatar
-                ? Object.assign({}, contact, {
-                    avatar: Object.assign({}, contact.avatar, {
+                ? {
+                    ...contact,
+                    avatar: {
+                      ...contact.avatar,
                       avatar: await wrappedLoadAttachment(
                         contact.avatar.avatar
                       ),
-                    }),
-                  })
+                    },
+                  }
                 : contact;
             })
           ),
@@ -381,7 +438,7 @@ describe('Backup', () => {
               return item;
             })
           ),
-        });
+        };
       }
 
       let backupDir;
@@ -396,10 +453,11 @@ describe('Backup', () => {
         const CONVERSATION_COUNT = 1;
 
         const messageWithAttachments = {
-          conversationId: CONTACT_ONE_NUMBER,
+          conversationId: CONVERSATION_ID,
           body: 'Totally!',
           source: OUR_NUMBER,
           received_at: 1524185933350,
+          sent_at: 1524185933350,
           timestamp: 1524185933350,
           errors: [],
           attachments: [
@@ -484,7 +542,7 @@ describe('Backup', () => {
           active_at: 1524185933350,
           color: 'orange',
           expireTimer: 0,
-          id: CONTACT_ONE_NUMBER,
+          id: CONVERSATION_ID,
           name: 'Someone Somewhere',
           profileAvatar: {
             contentType: 'image/jpeg',
@@ -497,6 +555,8 @@ describe('Backup', () => {
           timestamp: 1524185933350,
           type: 'private',
           unreadCount: 0,
+          messageCount: 0,
+          sentMessageCount: 0,
           verified: 0,
           sealedSender: 0,
           version: 2,
@@ -509,7 +569,7 @@ describe('Backup', () => {
         console.log(
           'Backup test: Ensure that all attachments were saved to disk'
         );
-        const attachmentFiles = removeDirs(glob.sync(attachmentsPattern));
+        const attachmentFiles = removeDirs(fastGlob.sync(attachmentsPattern));
         console.log({ attachmentFiles });
         assert.strictEqual(ATTACHMENT_COUNT, attachmentFiles.length);
 
@@ -528,8 +588,10 @@ describe('Backup', () => {
         console.log(
           'Backup test: Ensure that all attachments made it to backup dir'
         );
-        const backupAttachmentPattern = path.join(backupDir, 'attachments/*');
-        const backupAttachments = glob.sync(backupAttachmentPattern);
+        const backupAttachmentPattern = normalizePath(
+          path.join(backupDir, 'attachments/*')
+        );
+        const backupAttachments = fastGlob.sync(backupAttachmentPattern);
         console.log({ backupAttachments });
         assert.strictEqual(ATTACHMENT_COUNT, backupAttachments.length);
 
@@ -557,7 +619,7 @@ describe('Backup', () => {
         );
 
         console.log('Backup test: Check messages');
-        const messageCollection = await window.Signal.Data.getAllMessages({
+        const messageCollection = await window.Signal.Data._getAllMessages({
           MessageCollection: Whisper.MessageCollection,
         });
         assert.strictEqual(messageCollection.length, MESSAGE_COUNT);
@@ -566,9 +628,9 @@ describe('Backup', () => {
         console.log({ messageFromDB, expectedMessage });
         assert.deepEqual(messageFromDB, expectedMessage);
 
-        console.log('Backup test: ensure that all attachments were imported');
+        console.log('Backup test: Ensure that all attachments were imported');
         const recreatedAttachmentFiles = removeDirs(
-          glob.sync(attachmentsPattern)
+          fastGlob.sync(attachmentsPattern)
         );
         console.log({ recreatedAttachmentFiles });
         assert.strictEqual(ATTACHMENT_COUNT, recreatedAttachmentFiles.length);

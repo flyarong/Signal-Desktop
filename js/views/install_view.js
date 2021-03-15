@@ -1,11 +1,12 @@
+// Copyright 2015-2020 Signal Messenger, LLC
+// SPDX-License-Identifier: AGPL-3.0-only
+
 /* global Whisper, i18n, getAccountManager, $, textsecure, QRCode */
 
 /* eslint-disable more/no-then */
 
 // eslint-disable-next-line func-names
-(function() {
-  'use strict';
-
+(function () {
   window.Whisper = window.Whisper || {};
 
   const Steps = {
@@ -20,28 +21,33 @@
   const DEVICE_NAME_SELECTOR = 'input.device-name';
   const CONNECTION_ERROR = -1;
   const TOO_MANY_DEVICES = 411;
+  const TOO_OLD = 409;
 
   Whisper.InstallView = Whisper.View.extend({
     templateName: 'link-flow-template',
     className: 'main full-screen-flow',
     events: {
       'click .try-again': 'connect',
+      'click .second': 'shutdown',
       'click .finish': 'finishLinking',
       // the actual next step happens in confirmNumber() on submit form #link-phone
     },
     initialize(options = {}) {
       window.readyForUpdates();
 
+      this.didLink = false;
       this.selectStep(Steps.SCAN_QR_CODE);
       this.connect();
       this.on('disconnected', this.reconnect);
 
       // Keep data around if it's a re-link, or the middle of a light import
       this.shouldRetainData =
-        Whisper.Registration.everDone() || options.hasExistingData;
+        window.Signal.Util.Registration.everDone() || options.hasExistingData;
     },
     render_attributes() {
       let errorMessage;
+      let errorButton = i18n('installTryAgain');
+      let errorSecondButton = null;
 
       if (this.error) {
         if (
@@ -49,6 +55,13 @@
           this.error.code === TOO_MANY_DEVICES
         ) {
           errorMessage = i18n('installTooManyDevices');
+        } else if (
+          this.error.name === 'HTTPError' &&
+          this.error.code === TOO_OLD
+        ) {
+          errorMessage = i18n('installTooOld');
+          errorButton = i18n('upgrade');
+          errorSecondButton = i18n('quit');
         } else if (
           this.error.name === 'HTTPError' &&
           this.error.code === CONNECTION_ERROR
@@ -62,9 +75,10 @@
 
         return {
           isError: true,
-          errorHeader: 'Something went wrong!',
+          errorHeader: i18n('installErrorHeader'),
           errorMessage,
-          errorButton: 'Try again',
+          errorButton,
+          errorSecondButton,
         };
       }
 
@@ -88,7 +102,19 @@
       this.step = step;
       this.render();
     },
+    shutdown() {
+      window.shutdown();
+    },
     connect() {
+      if (
+        this.error &&
+        this.error.name === 'HTTPError' &&
+        this.error.code === TOO_OLD
+      ) {
+        window.location = 'https://signal.org/download';
+        return;
+      }
+
       this.error = null;
       this.selectStep(Steps.SCAN_QR_CODE);
       this.clearQR();
@@ -143,6 +169,7 @@
         return;
       }
 
+      this.clearQR();
       this.$('#qr .container').hide();
       this.qr = new QRCode(this.$('#qr')[0]).makeCode(url);
       this.$('#qr').removeAttr('title');
@@ -179,7 +206,10 @@
 
           this.selectStep(Steps.PROGRESS_BAR);
 
-          const finish = () => resolve(name);
+          const finish = () => {
+            this.didLink = true;
+            return resolve(name);
+          };
 
           // Delete all data from database unless we're in the middle
           //   of a re-link, or we are finishing a light import. Without this,
@@ -195,7 +225,7 @@
               'confirmNumber: error clearing database',
               error && error.stack ? error.stack : error
             );
-            finish();
+            return finish();
           });
         });
       });

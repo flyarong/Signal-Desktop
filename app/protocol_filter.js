@@ -1,3 +1,6 @@
+// Copyright 2018-2020 Signal Messenger, LLC
+// SPDX-License-Identifier: AGPL-3.0-only
+
 const path = require('path');
 const fs = require('fs');
 
@@ -23,8 +26,25 @@ function _urlToPath(targetUrl, options = {}) {
 
 function _createFileHandler({ userDataPath, installPath, isWindows }) {
   return (request, callback) => {
+    let targetPath;
+    try {
+      targetPath = _urlToPath(request.url, { isWindows });
+    } catch (err) {
+      const errorMessage =
+        err && typeof err.message === 'string'
+          ? err.message
+          : 'no error message';
+      console.log(
+        `Warning: denying request because of an error: ${errorMessage}`
+      );
+
+      // This is an "invalid URL" error. See [Chromium's net error list][0].
+      //
+      // [0]: https://source.chromium.org/chromium/chromium/src/+/master:net/base/net_error_list.h;l=563;drc=a836ee9868cf1b9673fce362a82c98aba3e195de
+      return callback({ error: -300 });
+    }
     // normalize() is primarily useful here for switching / to \ on windows
-    const target = path.normalize(_urlToPath(request.url, { isWindows }));
+    const target = path.normalize(targetPath);
     // here we attempt to follow symlinks to the ultimate final path, reflective of what
     //   we do in main.js on userDataPath and installPath
     const realPath = fs.existsSync(target) ? fs.realpathSync(target) : target;
@@ -75,7 +95,7 @@ function _disabledHandler(request, callback) {
   return callback();
 }
 
-function installWebHandler({ protocol }) {
+function installWebHandler({ protocol, enableHttp }) {
   protocol.interceptFileProtocol('about', _disabledHandler);
   protocol.interceptFileProtocol('content', _disabledHandler);
   protocol.interceptFileProtocol('chrome', _disabledHandler);
@@ -84,12 +104,15 @@ function installWebHandler({ protocol }) {
   protocol.interceptFileProtocol('filesystem', _disabledHandler);
   protocol.interceptFileProtocol('ftp', _disabledHandler);
   protocol.interceptFileProtocol('gopher', _disabledHandler);
-  protocol.interceptFileProtocol('http', _disabledHandler);
-  protocol.interceptFileProtocol('https', _disabledHandler);
   protocol.interceptFileProtocol('javascript', _disabledHandler);
   protocol.interceptFileProtocol('mailto', _disabledHandler);
-  protocol.interceptFileProtocol('ws', _disabledHandler);
-  protocol.interceptFileProtocol('wss', _disabledHandler);
+
+  if (!enableHttp) {
+    protocol.interceptFileProtocol('http', _disabledHandler);
+    protocol.interceptFileProtocol('https', _disabledHandler);
+    protocol.interceptFileProtocol('ws', _disabledHandler);
+    protocol.interceptFileProtocol('wss', _disabledHandler);
+  }
 }
 
 module.exports = {

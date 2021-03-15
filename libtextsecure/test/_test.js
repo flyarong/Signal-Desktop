@@ -1,4 +1,7 @@
-/* global mocha, chai, assert */
+// Copyright 2015-2020 Signal Messenger, LLC
+// SPDX-License-Identifier: AGPL-3.0-only
+
+/* global chai */
 
 mocha.setup('bdd');
 window.assert = chai.assert;
@@ -57,3 +60,9 @@ window.hexToArrayBuffer = str => {
 };
 
 window.MockSocket.prototype.addEventListener = () => null;
+
+window.Whisper = window.Whisper || {};
+window.Whisper.events = {
+  on() {},
+  trigger() {},
+};

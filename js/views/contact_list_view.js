@@ -1,10 +1,11 @@
+// Copyright 2015-2020 Signal Messenger, LLC
+// SPDX-License-Identifier: AGPL-3.0-only
+
 /* global Whisper: false */
 /* global textsecure: false */
 
 // eslint-disable-next-line func-names
-(function() {
-  'use strict';
-
+(function () {
   window.Whisper = window.Whisper || {};
 
   Whisper.ContactListView = Whisper.ListView.extend({
@@ -17,6 +18,7 @@
         this.ourNumber = textsecure.storage.user.getNumber();
         this.listenBack = options.listenBack;
         this.loading = false;
+        this.conversation = options.conversation;
 
         this.listenTo(this.model, 'change', this.render);
       },
@@ -26,42 +28,22 @@
           this.contactView = null;
         }
 
-        const isMe = this.ourNumber === this.model.id;
+        const formattedContact = this.model.format();
 
         this.contactView = new Whisper.ReactWrapperView({
           className: 'contact-wrapper',
           Component: window.Signal.Components.ContactListItem,
           props: {
-            isMe,
-            color: this.model.getColor(),
-            avatarPath: this.model.getAvatarPath(),
-            phoneNumber: this.model.getNumber(),
-            name: this.model.getName(),
-            profileName: this.model.getProfileName(),
-            verified: this.model.isVerified(),
-            onClick: this.showIdentity.bind(this),
-            disabled: this.loading,
+            ...formattedContact,
+            onClick: () =>
+              this.conversation.trigger(
+                'show-contact-modal',
+                formattedContact.id
+              ),
           },
         });
         this.$el.append(this.contactView.el);
         return this;
-      },
-      showIdentity() {
-        if (this.model.id === this.ourNumber || this.loading) {
-          return;
-        }
-
-        this.loading = true;
-        this.render();
-
-        this.panelView = new Whisper.KeyVerificationPanelView({
-          model: this.model,
-          onLoad: view => {
-            this.loading = false;
-            this.listenBack(view);
-            this.render();
-          },
-        });
       },
     }),
   });

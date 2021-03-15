@@ -1,3 +1,6 @@
+// Copyright 2019-2020 Signal Messenger, LLC
+// SPDX-License-Identifier: AGPL-3.0-only
+
 import React from 'react';
 import classNames from 'classnames';
 
@@ -19,12 +22,12 @@ export function renderAvatar({
   i18n: LocalizerType;
   size: 28 | 52 | 80;
   direction?: 'outgoing' | 'incoming';
-}) {
+}): JSX.Element {
   const { avatar } = contact;
 
   const avatarPath = avatar && avatar.avatar && avatar.avatar.path;
   const pending = avatar && avatar.avatar && avatar.avatar.pending;
-  const name = getName(contact) || '';
+  const title = getName(contact) || '';
   const spinnerSvgSize = size < 50 ? 'small' : 'normal';
   const spinnerSize = size < 50 ? '24px' : undefined;
 
@@ -46,7 +49,7 @@ export function renderAvatar({
       color="grey"
       conversationType="direct"
       i18n={i18n}
-      name={name}
+      title={title}
       size={size}
     />
   );
@@ -60,7 +63,7 @@ export function renderName({
   contact: ContactType;
   isIncoming: boolean;
   module: string;
-}) {
+}): JSX.Element {
   return (
     <div
       className={classNames(
@@ -81,7 +84,7 @@ export function renderContactShorthand({
   contact: ContactType;
   isIncoming: boolean;
   module: string;
-}) {
+}): JSX.Element {
   const { number: phoneNumber, email } = contact;
   const firstNumber = phoneNumber && phoneNumber[0] && phoneNumber[0].value;
   const firstEmail = email && email[0] && email[0].value;

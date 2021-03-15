@@ -1,22 +1,25 @@
+// Copyright 2019-2020 Signal Messenger, LLC
+// SPDX-License-Identifier: AGPL-3.0-only
+
 import React from 'react';
 
 import { Avatar } from './Avatar';
 
 import { LocalizerType } from '../types/Util';
 
-export interface Props {
+export type Props = {
   phoneNumber: string;
   i18n: LocalizerType;
   onClick: () => void;
-}
+};
 
 export class StartNewConversation extends React.PureComponent<Props> {
-  public render() {
+  public render(): JSX.Element {
     const { phoneNumber, i18n, onClick } = this.props;
 
     return (
-      <div
-        role="button"
+      <button
+        type="button"
         className="module-start-new-conversation"
         onClick={onClick}
       >
@@ -24,7 +27,7 @@ export class StartNewConversation extends React.PureComponent<Props> {
           color="grey"
           conversationType="direct"
           i18n={i18n}
-          phoneNumber={phoneNumber}
+          title={phoneNumber}
           size={52}
         />
         <div className="module-start-new-conversation__content">
@@ -35,7 +38,7 @@ export class StartNewConversation extends React.PureComponent<Props> {
             {i18n('startConversation')}
           </div>
         </div>
-      </div>
+      </button>
     );
   }
 }

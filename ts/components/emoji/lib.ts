@@ -1,9 +1,14 @@
-// @ts-ignore: untyped json
+// Copyright 2019-2020 Signal Messenger, LLC
+// SPDX-License-Identifier: AGPL-3.0-only
+
+// Camelcase disabled due to emoji-datasource using snake_case
+/* eslint-disable camelcase */
 import untypedData from 'emoji-datasource';
 import emojiRegex from 'emoji-regex';
 import {
   compact,
   flatMap,
+  get,
   groupBy,
   isNumber,
   keyBy,
@@ -15,8 +20,7 @@ import {
 import Fuse from 'fuse.js';
 import PQueue from 'p-queue';
 import is from '@sindresorhus/is';
-
-export type ValuesOf<T extends Array<any>> = T[number];
+import { getOwn } from '../../util/getOwn';
 
 export const skinTones = ['1F3FB', '1F3FC', '1F3FD', '1F3FE', '1F3FF'];
 
@@ -67,18 +71,34 @@ export type EmojiData = {
   };
 };
 
-const data = (untypedData as Array<EmojiData>).filter(
-  emoji => emoji.has_img_apple
+const data = (untypedData as Array<EmojiData>)
+  .filter(emoji => emoji.has_img_apple)
+  .map(emoji =>
+    // Why this weird map?
+    // the emoji dataset has two separate categories for Emotions and People
+    // yet in our UI we display these as a single merged category. In order
+    // for the emojis to be sorted properly we're manually incrementing the
+    // sort_order for the People & Body emojis so that they fall below the
+    // Smiley & Emotions category.
+    emoji.category === 'People & Body'
+      ? { ...emoji, sort_order: emoji.sort_order + 1000 }
+      : emoji
+  );
+
+const ROOT_PATH = get(
+  typeof window !== 'undefined' ? window : null,
+  'ROOT_PATH',
+  ''
 );
 
 const makeImagePath = (src: string) => {
-  return `node_modules/emoji-datasource-apple/img/apple/64/${src}`;
+  return `${ROOT_PATH}node_modules/emoji-datasource-apple/img/apple/64/${src}`;
 };
 
-const imageQueue = new PQueue({ concurrency: 10 });
+const imageQueue = new PQueue({ concurrency: 10, timeout: 1000 * 60 * 2 });
 const images = new Set();
 
-export const preloadImages = async () => {
+export const preloadImages = async (): Promise<void> => {
   // Preload images
   const preload = async (src: string) =>
     new Promise((resolve, reject) => {
@@ -87,21 +107,17 @@ export const preloadImages = async () => {
       img.onerror = reject;
       img.src = src;
       images.add(img);
-      // tslint:disable-next-line  no-string-based-set-timeout
       setTimeout(reject, 5000);
     });
 
-  // tslint:disable-next-line no-console
-  console.log('Preloading emoji images');
+  window.log.info('Preloading emoji images');
   const start = Date.now();
 
   data.forEach(emoji => {
-    // tslint:disable-next-line no-floating-promises promise-function-async
     imageQueue.add(() => preload(makeImagePath(emoji.image)));
 
     if (emoji.skin_variations) {
       Object.values(emoji.skin_variations).forEach(variation => {
-        // tslint:disable-next-line no-floating-promises promise-function-async
         imageQueue.add(() => preload(makeImagePath(variation.image)));
       });
     }
@@ -110,12 +126,12 @@ export const preloadImages = async () => {
   await imageQueue.onEmpty();
 
   const end = Date.now();
-  // tslint:disable-next-line no-console
-  console.log(`Done preloading emoji images in ${end - start}ms`);
+  window.log.info(`Done preloading emoji images in ${end - start}ms`);
 };
 
 const dataByShortName = keyBy(data, 'short_name');
 const imageByEmoji: { [key: string]: string } = {};
+const dataByEmoji: { [key: string]: EmojiData } = {};
 
 export const dataByCategory = mapValues(
   groupBy(data, ({ category }) => {
@@ -143,7 +159,11 @@ export const dataByCategory = mapValues(
       return 'travel';
     }
 
-    if (category === 'Smileys & People') {
+    if (category === 'Smileys & Emotion') {
+      return 'emoji';
+    }
+
+    if (category === 'People & Body') {
       return 'emoji';
     }
 
@@ -165,7 +185,15 @@ export function getEmojiData(
   if (skinTone && base.skin_variations) {
     const variation = isNumber(skinTone) ? skinTones[skinTone - 1] : skinTone;
 
-    return base.skin_variations[variation];
+    if (base.skin_variations[variation]) {
+      return base.skin_variations[variation];
+    }
+
+    // For emojis that have two people in them which can have diff skin tones
+    // the Map is of SkinTone-SkinTone. If we don't find the correct skin tone
+    // in the list of variations then we assume it is one of those double skin
+    // emojis and we default to both people having same skin.
+    return base.skin_variations[`${variation}-${variation}`];
   }
 
   return base;
@@ -175,9 +203,9 @@ export function getImagePath(
   shortName: keyof typeof dataByShortName,
   skinTone?: SkinToneKey | number
 ): string {
-  const { image } = getEmojiData(shortName, skinTone);
+  const emojiData = getEmojiData(shortName, skinTone);
 
-  return makeImagePath(image);
+  return makeImagePath(emojiData.image);
 }
 
 const fuse = new Fuse(data, {
@@ -187,10 +215,10 @@ const fuse = new Fuse(data, {
   minMatchCharLength: 1,
   tokenize: true,
   tokenSeparator: /[-_\s]+/,
-  keys: ['name', 'short_name', 'short_names'],
+  keys: ['short_name', 'name'],
 });
 
-export function search(query: string, count: number = 0) {
+export function search(query: string, count = 0): Array<EmojiData> {
   const results = fuse.search(query.substr(0, 32));
 
   if (count) {
@@ -205,25 +233,25 @@ const shortNames = new Set([
   ...compact<string>(flatMap(data, 'short_names')),
 ]);
 
-export function isShortName(name: string) {
+export function isShortName(name: string): boolean {
   return shortNames.has(name);
 }
 
-export function unifiedToEmoji(unified: string) {
+export function unifiedToEmoji(unified: string): string {
   return unified
     .split('-')
     .map(c => String.fromCodePoint(parseInt(c, 16)))
     .join('');
 }
 
-export function convertShortName(
+export function convertShortNameToData(
   shortName: string,
   skinTone: number | SkinToneKey = 0
-) {
+): EmojiData | undefined {
   const base = dataByShortName[shortName];
 
   if (!base) {
-    return '';
+    return undefined;
   }
 
   const toneKey = is.number(skinTone) ? skinTones[skinTone - 1] : skinTone;
@@ -231,31 +259,35 @@ export function convertShortName(
   if (skinTone && base.skin_variations) {
     const variation = base.skin_variations[toneKey];
     if (variation) {
-      return unifiedToEmoji(variation.unified);
+      return {
+        ...base,
+        ...variation,
+      };
     }
   }
 
-  return unifiedToEmoji(base.unified);
+  return base;
+}
+
+export function convertShortName(
+  shortName: string,
+  skinTone: number | SkinToneKey = 0
+): string {
+  const emojiData = convertShortNameToData(shortName, skinTone);
+
+  if (!emojiData) {
+    return '';
+  }
+
+  return unifiedToEmoji(emojiData.unified);
 }
 
 export function emojiToImage(emoji: string): string | undefined {
-  return imageByEmoji[emoji];
+  return getOwn(imageByEmoji, emoji);
 }
 
-export function replaceColons(str: string) {
-  return str.replace(/:[a-z0-9-_+]+:(?::skin-tone-[1-5]:)?/gi, m => {
-    const [shortName = '', skinTone = '0'] = m
-      .replace('skin-tone-', '')
-      .toLowerCase()
-      .split(':')
-      .filter(Boolean);
-
-    if (shortName && isShortName(shortName)) {
-      return convertShortName(shortName, parseInt(skinTone, 10));
-    }
-
-    return m;
-  });
+export function emojiToData(emoji: string): EmojiData | undefined {
+  return getOwn(dataByEmoji, emoji);
 }
 
 function getCountOfAllMatches(str: string, regex: RegExp) {
@@ -284,15 +316,17 @@ export function getSizeClass(str: string): SizeClassType {
 
   if (emojiCount > 8) {
     return '';
-  } else if (emojiCount > 6) {
-    return 'small';
-  } else if (emojiCount > 4) {
-    return 'medium';
-  } else if (emojiCount > 2) {
-    return 'large';
-  } else {
-    return 'jumbo';
   }
+  if (emojiCount > 6) {
+    return 'small';
+  }
+  if (emojiCount > 4) {
+    return 'medium';
+  }
+  if (emojiCount > 2) {
+    return 'large';
+  }
+  return 'jumbo';
 }
 
 data.forEach(emoji => {
@@ -305,12 +339,14 @@ data.forEach(emoji => {
   }
 
   imageByEmoji[convertShortName(short_name)] = makeImagePath(image);
+  dataByEmoji[convertShortName(short_name)] = emoji;
 
   if (skin_variations) {
     Object.entries(skin_variations).forEach(([tone, variation]) => {
       imageByEmoji[
         convertShortName(short_name, tone as SkinToneKey)
       ] = makeImagePath(variation.image);
+      dataByEmoji[convertShortName(short_name, tone as SkinToneKey)] = emoji;
     });
   }
 });

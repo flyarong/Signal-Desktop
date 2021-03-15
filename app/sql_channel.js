@@ -1,6 +1,9 @@
+// Copyright 2018-2020 Signal Messenger, LLC
+// SPDX-License-Identifier: AGPL-3.0-only
+
 const electron = require('electron');
-const Queue = require('p-queue');
-const sql = require('./sql');
+const Queue = require('p-queue').default;
+const sql = require('../ts/sql/Server').default;
 const { remove: removeUserConfig } = require('./user_config');
 const { remove: removeEphemeralConfig } = require('./ephemeral_config');
 
@@ -18,6 +21,9 @@ const ERASE_SQL_KEY = 'erase-sql-key';
 let singleQueue = null;
 let multipleQueue = null;
 
+// Note: we don't want queue timeouts, because delays here are due to in-progress sql
+//   operations. For example we might try to start a transaction when the prevous isn't
+//   done, causing that database operation to fail.
 function makeNewSingleQueue() {
   singleQueue = new Queue({ concurrency: 1 });
   return singleQueue;

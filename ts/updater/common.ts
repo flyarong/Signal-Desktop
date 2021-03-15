@@ -1,3 +1,7 @@
+// Copyright 2019-2020 Signal Messenger, LLC
+// SPDX-License-Identifier: AGPL-3.0-only
+
+/* eslint-disable no-console */
 import {
   createWriteStream,
   statSync,
@@ -6,9 +10,7 @@ import {
 import { join, normalize } from 'path';
 import { tmpdir } from 'os';
 
-// @ts-ignore
-import { createParser } from 'dashdash';
-// @ts-ignore
+import { createParser, ParserConfiguration } from 'dashdash';
 import ProxyAgent from 'proxy-agent';
 import { FAILSAFE_SCHEMA, safeLoad } from 'js-yaml';
 import { gt } from 'semver';
@@ -18,36 +20,25 @@ import { v4 as getGuid } from 'uuid';
 import pify from 'pify';
 import mkdirp from 'mkdirp';
 import rimraf from 'rimraf';
-import { app, BrowserWindow, dialog } from 'electron';
+import { app, BrowserWindow, dialog, ipcMain } from 'electron';
 
 import { getTempPath } from '../../app/attachments';
+import { Dialogs } from '../types/Dialogs';
+import { getUserAgent } from '../util/getUserAgent';
 
-// @ts-ignore
 import * as packageJson from '../../package.json';
 import { getSignatureFileName } from './signature';
+import { isPathInside } from '../util/isPathInside';
 
-export type MessagesType = {
-  [key: string]: {
-    message: string;
-    description?: string;
-  };
-};
-
-type LogFunction = (...args: Array<any>) => void;
-
-export type LoggerType = {
-  fatal: LogFunction;
-  error: LogFunction;
-  warn: LogFunction;
-  info: LogFunction;
-  debug: LogFunction;
-  trace: LogFunction;
-};
+import { LocaleType } from '../types/I18N';
+import { LoggerType } from '../types/Logging';
 
 const writeFile = pify(writeFileCallback);
 const mkdirpPromise = pify(mkdirp);
 const rimrafPromise = pify(rimraf);
 const { platform } = process;
+
+export const ACK_RENDER_TIMEOUT = 10000;
 
 export async function checkForUpdates(
   logger: LoggerType
@@ -80,10 +71,10 @@ export async function checkForUpdates(
   return null;
 }
 
-export function validatePath(basePath: string, targetPath: string) {
+export function validatePath(basePath: string, targetPath: string): void {
   const normalized = normalize(targetPath);
 
-  if (!normalized.startsWith(basePath)) {
+  if (!isPathInside(normalized, basePath)) {
     throw new Error(
       `validatePath: Path ${normalized} is not under base path ${basePath}`
     );
@@ -117,7 +108,7 @@ export async function downloadUpdate(
     const downloadStream = stream(updateFileUrl, getGotOptions());
     const writeStream = createWriteStream(targetUpdatePath);
 
-    await new Promise((resolve, reject) => {
+    await new Promise<void>((resolve, reject) => {
       downloadStream.on('error', error => {
         reject(error);
       });
@@ -141,42 +132,104 @@ export async function downloadUpdate(
   }
 }
 
-export async function showUpdateDialog(
+let showingUpdateDialog = false;
+
+async function showFallbackUpdateDialog(
   mainWindow: BrowserWindow,
-  messages: MessagesType
+  locale: LocaleType
 ): Promise<boolean> {
+  if (showingUpdateDialog) {
+    return false;
+  }
+
   const RESTART_BUTTON = 0;
   const LATER_BUTTON = 1;
   const options = {
     type: 'info',
     buttons: [
-      messages.autoUpdateRestartButtonLabel.message,
-      messages.autoUpdateLaterButtonLabel.message,
+      locale.messages.autoUpdateRestartButtonLabel.message,
+      locale.messages.autoUpdateLaterButtonLabel.message,
     ],
-    title: messages.autoUpdateNewVersionTitle.message,
-    message: messages.autoUpdateNewVersionMessage.message,
-    detail: messages.autoUpdateNewVersionInstructions.message,
+    title: locale.messages.autoUpdateNewVersionTitle.message,
+    message: locale.messages.autoUpdateNewVersionMessage.message,
+    detail: locale.messages.autoUpdateNewVersionInstructions.message,
     defaultId: LATER_BUTTON,
-    cancelId: RESTART_BUTTON,
+    cancelId: LATER_BUTTON,
   };
 
+  showingUpdateDialog = true;
+
   const { response } = await dialog.showMessageBox(mainWindow, options);
+
+  showingUpdateDialog = false;
 
   return response === RESTART_BUTTON;
 }
 
-export async function showCannotUpdateDialog(
+export function showUpdateDialog(
   mainWindow: BrowserWindow,
-  messages: MessagesType
-): Promise<any> {
+  locale: LocaleType,
+  performUpdateCallback: () => void
+): void {
+  let ack = false;
+
+  ipcMain.once('show-update-dialog-ack', () => {
+    ack = true;
+  });
+
+  mainWindow.webContents.send('show-update-dialog', Dialogs.Update);
+
+  setTimeout(async () => {
+    if (!ack) {
+      const shouldUpdate = await showFallbackUpdateDialog(mainWindow, locale);
+      if (shouldUpdate) {
+        performUpdateCallback();
+      }
+    }
+  }, ACK_RENDER_TIMEOUT);
+}
+
+let showingCannotUpdateDialog = false;
+
+async function showFallbackCannotUpdateDialog(
+  mainWindow: BrowserWindow,
+  locale: LocaleType
+): Promise<void> {
+  if (showingCannotUpdateDialog) {
+    return;
+  }
+
   const options = {
     type: 'error',
-    buttons: [messages.ok.message],
-    title: messages.cannotUpdate.message,
-    message: messages.cannotUpdateDetail.message,
+    buttons: [locale.messages.ok.message],
+    title: locale.messages.cannotUpdate.message,
+    message: locale.i18n('cannotUpdateDetail', ['https://signal.org/download']),
   };
 
+  showingCannotUpdateDialog = true;
+
   await dialog.showMessageBox(mainWindow, options);
+
+  showingCannotUpdateDialog = false;
+}
+
+export function showCannotUpdateDialog(
+  mainWindow: BrowserWindow,
+  locale: LocaleType
+): void {
+  let ack = false;
+
+  ipcMain.once('show-update-dialog-ack', () => {
+    ack = true;
+  });
+
+  mainWindow.webContents.send('show-update-dialog', Dialogs.Cannot_Update);
+
+  setTimeout(async () => {
+    if (!ack) {
+      await showFallbackCannotUpdateDialog(mainWindow, locale);
+    }
+  }, ACK_RENDER_TIMEOUT);
 }
 
 // Helper functions
@@ -200,9 +253,9 @@ export function getUpdatesFileName(): string {
 
   if (platform === 'darwin') {
     return `${prefix}-mac.yml`;
-  } else {
-    return `${prefix}.yml`;
   }
+
+  return `${prefix}.yml`;
 }
 
 const hasBeta = /beta/i;
@@ -216,29 +269,27 @@ function isVersionNewer(newVersion: string): boolean {
   return gt(newVersion, version);
 }
 
-export function getVersion(yaml: string): string | undefined {
+export function getVersion(yaml: string): string | null {
   const info = parseYaml(yaml);
 
-  if (info && info.version) {
-    return info.version;
-  }
-
-  return;
+  return info && info.version;
 }
 
-const validFile = /^[A-Za-z0-9\.\-]+$/;
-export function isUpdateFileNameValid(name: string) {
+const validFile = /^[A-Za-z0-9.-]+$/;
+export function isUpdateFileNameValid(name: string): boolean {
   return validFile.test(name);
 }
 
-export function getUpdateFileName(yaml: string) {
+// Reliant on third party parser that returns any
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export function getUpdateFileName(yaml: string): any {
   const info = parseYaml(yaml);
 
   if (!info || !info.path) {
     throw new Error('getUpdateFileName: No path present in YAML file');
   }
 
-  const path = info.path;
+  const { path } = info;
   if (!isUpdateFileNameValid(path)) {
     throw new Error(
       `getUpdateFileName: Path '${path}' contains invalid characters`
@@ -248,6 +299,8 @@ export function getUpdateFileName(yaml: string) {
   return path;
 }
 
+// Reliant on third party parser that returns any
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 function parseYaml(yaml: string): any {
   return safeLoad(yaml, { schema: FAILSAFE_SCHEMA, json: true });
 }
@@ -273,7 +326,7 @@ function getGotOptions(): GotOptions<null> {
     ca,
     headers: {
       'Cache-Control': 'no-cache',
-      'User-Agent': 'Signal Desktop (+https://signal.org/download)',
+      'User-Agent': getUserAgent(packageJson.version),
     },
     useElectronNet: false,
   };
@@ -284,7 +337,7 @@ function getBaseTempDir() {
   return app ? getTempPath(app.getPath('userData')) : tmpdir();
 }
 
-export async function createTempDir() {
+export async function createTempDir(): Promise<string> {
   const baseTempDir = getBaseTempDir();
   const uniqueName = getGuid();
   const targetDir = join(baseTempDir, uniqueName);
@@ -293,7 +346,7 @@ export async function createTempDir() {
   return targetDir;
 }
 
-export async function deleteTempDir(targetDir: string) {
+export async function deleteTempDir(targetDir: string): Promise<void> {
   const pathInfo = statSync(targetDir);
   if (!pathInfo.isDirectory()) {
     throw new Error(
@@ -302,7 +355,7 @@ export async function deleteTempDir(targetDir: string) {
   }
 
   const baseTempDir = getBaseTempDir();
-  if (!targetDir.startsWith(baseTempDir)) {
+  if (!isPathInside(targetDir, baseTempDir)) {
     throw new Error(
       `deleteTempDir: Cannot delete path '${targetDir}' since it is not within base temp dir`
     );
@@ -311,20 +364,23 @@ export async function deleteTempDir(targetDir: string) {
   await rimrafPromise(targetDir);
 }
 
-export function getPrintableError(error: Error) {
+export function getPrintableError(error: Error): Error | string {
   return error && error.stack ? error.stack : error;
 }
 
-export function getCliOptions<T>(options: any): T {
+export function getCliOptions<T>(options: ParserConfiguration['options']): T {
   const parser = createParser({ options });
   const cliOptions = parser.parse(process.argv);
 
   if (cliOptions.help) {
     const help = parser.help().trimRight();
-    // tslint:disable-next-line:no-console
     console.log(help);
     process.exit(0);
   }
 
-  return cliOptions;
+  return (cliOptions as unknown) as T;
+}
+
+export function setUpdateListener(performUpdateCallback: () => void): void {
+  ipcMain.once('start-update', performUpdateCallback);
 }

@@ -1,3 +1,6 @@
+// Copyright 2019-2020 Signal Messenger, LLC
+// SPDX-License-Identifier: AGPL-3.0-only
+
 import { dirname, join } from 'path';
 import { spawn as spawnEmitter, SpawnOptions } from 'child_process';
 import { readdir as readdirCallback, unlink as unlinkCallback } from 'fs';
@@ -12,43 +15,21 @@ import {
   deleteTempDir,
   downloadUpdate,
   getPrintableError,
-  LoggerType,
-  MessagesType,
+  setUpdateListener,
   showCannotUpdateDialog,
   showUpdateDialog,
 } from './common';
+import { LocaleType } from '../types/I18N';
+import { LoggerType } from '../types/Logging';
 import { hexToBinary, verifySignature } from './signature';
 import { markShouldQuit } from '../../app/window_state';
 
 const readdir = pify(readdirCallback);
 const unlink = pify(unlinkCallback);
 
-let isChecking = false;
 const SECOND = 1000;
 const MINUTE = SECOND * 60;
 const INTERVAL = MINUTE * 30;
-
-export async function start(
-  getMainWindow: () => BrowserWindow,
-  messages: MessagesType,
-  logger: LoggerType
-) {
-  logger.info('windows/start: starting checks...');
-
-  loggerForQuitHandler = logger;
-  app.once('quit', quitHandler);
-
-  setInterval(async () => {
-    try {
-      await checkDownloadAndInstall(getMainWindow, messages, logger);
-    } catch (error) {
-      logger.error('windows/start: error:', getPrintableError(error));
-    }
-  }, INTERVAL);
-
-  await deletePreviousInstallers(logger);
-  await checkDownloadAndInstall(getMainWindow, messages, logger);
-}
 
 let fileName: string;
 let version: string;
@@ -56,18 +37,36 @@ let updateFilePath: string;
 let installing: boolean;
 let loggerForQuitHandler: LoggerType;
 
+export async function start(
+  getMainWindow: () => BrowserWindow,
+  locale: LocaleType,
+  logger: LoggerType
+): Promise<void> {
+  logger.info('windows/start: starting checks...');
+
+  loggerForQuitHandler = logger;
+  app.once('quit', quitHandler);
+
+  setUpdateListener(createUpdater(getMainWindow, locale, logger));
+
+  setInterval(async () => {
+    try {
+      await checkDownloadAndInstall(getMainWindow, locale, logger);
+    } catch (error) {
+      logger.error('windows/start: error:', getPrintableError(error));
+    }
+  }, INTERVAL);
+
+  await deletePreviousInstallers(logger);
+  await checkDownloadAndInstall(getMainWindow, locale, logger);
+}
+
 async function checkDownloadAndInstall(
   getMainWindow: () => BrowserWindow,
-  messages: MessagesType,
+  locale: LocaleType,
   logger: LoggerType
 ) {
-  if (isChecking) {
-    return;
-  }
-
   try {
-    isChecking = true;
-
     logger.info('checkDownloadAndInstall: checking for update...');
     const result = await checkForUpdates(logger);
     if (!result) {
@@ -93,29 +92,13 @@ async function checkDownloadAndInstall(
     }
 
     logger.info('checkDownloadAndInstall: showing dialog...');
-    const shouldUpdate = await showUpdateDialog(getMainWindow(), messages);
-    if (!shouldUpdate) {
-      return;
-    }
-
-    try {
-      await verifyAndInstall(updateFilePath, version, logger);
-      installing = true;
-    } catch (error) {
-      logger.info(
-        'checkDownloadAndInstall: showing general update failure dialog...'
-      );
-      await showCannotUpdateDialog(getMainWindow(), messages);
-
-      throw error;
-    }
-
-    markShouldQuit();
-    app.quit();
+    showUpdateDialog(
+      getMainWindow(),
+      locale,
+      createUpdater(getMainWindow, locale, logger)
+    );
   } catch (error) {
     logger.error('checkDownloadAndInstall: error', getPrintableError(error));
-  } finally {
-    isChecking = false;
   }
 }
 
@@ -163,6 +146,10 @@ async function verifyAndInstall(
   newVersion: string,
   logger: LoggerType
 ) {
+  if (installing) {
+    return;
+  }
+
   const publicKey = hexToBinary(getFromConfig('updatesPublicKey'));
   const verified = await verifySignature(updateFilePath, newVersion, publicKey);
   if (!verified) {
@@ -179,7 +166,7 @@ async function install(filePath: string, logger: LoggerType): Promise<void> {
   const args = ['--updated'];
   const options = {
     detached: true,
-    stdio: 'ignore' as 'ignore', // TypeScript considers this a plain string without help
+    stdio: 'ignore' as const, // TypeScript considers this a plain string without help
   };
 
   try {
@@ -225,7 +212,29 @@ async function spawn(
     emitter.on('error', reject);
     emitter.unref();
 
-    // tslint:disable-next-line no-string-based-set-timeout
     setTimeout(resolve, 200);
   });
+}
+
+function createUpdater(
+  getMainWindow: () => BrowserWindow,
+  locale: LocaleType,
+  logger: LoggerType
+) {
+  return async () => {
+    try {
+      await verifyAndInstall(updateFilePath, version, logger);
+      installing = true;
+    } catch (error) {
+      logger.info(
+        'checkDownloadAndInstall: showing general update failure dialog...'
+      );
+      showCannotUpdateDialog(getMainWindow(), locale);
+
+      throw error;
+    }
+
+    markShouldQuit();
+    app.quit();
+  };
 }

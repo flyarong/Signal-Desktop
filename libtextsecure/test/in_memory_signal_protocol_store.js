@@ -1,9 +1,18 @@
+// Copyright 2016-2020 Signal Messenger, LLC
+// SPDX-License-Identifier: AGPL-3.0-only
+
 function SignalProtocolStore() {
   this.store = {};
 }
 
 SignalProtocolStore.prototype = {
   Direction: { SENDING: 1, RECEIVING: 2 },
+  VerifiedStatus: {
+    DEFAULT: 0,
+    VERIFIED: 1,
+    UNVERIFIED: 2,
+  },
+
   getIdentityKeyPair() {
     return Promise.resolve(this.get('identityKey'));
   },

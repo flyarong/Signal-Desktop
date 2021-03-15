@@ -1,3 +1,6 @@
+// Copyright 2016-2020 Signal Messenger, LLC
+// SPDX-License-Identifier: AGPL-3.0-only
+
 .lightbox-container {
   display: none;
   position: absolute;
@@ -9,6 +12,8 @@
 }
 
 .iconButton {
+  @include button-reset;
+
   // NOTE: Cannot move these to inline styles as hover breaks due to precedence.
   // We use vanilla CSS-in-JS which outputs inline styles. The `:hover`
   // pseudo-class cannot be expressed using vanilla CSS-in-JS, so we define it
@@ -21,7 +26,6 @@
   height: 50px;
 
   display: inline-block;
-  cursor: pointer;
   border-radius: 50%;
   padding: 3px;
 
@@ -32,7 +36,8 @@
     height: 100%;
   }
 
-  &:hover {
+  &:hover,
+  &:focus {
     background: $color-gray-60;
   }
 

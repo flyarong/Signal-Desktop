@@ -1,3 +1,6 @@
+// Copyright 2017-2020 Signal Messenger, LLC
+// SPDX-License-Identifier: AGPL-3.0-only
+
 /* global
   Backbone,
   Whisper,
@@ -7,14 +10,16 @@
 /* eslint-disable more/no-then */
 
 // eslint-disable-next-line func-names
-(function() {
-  'use strict';
-
+(function () {
   window.Whisper = window.Whisper || {};
   Whisper.ReadSyncs = new (Backbone.Collection.extend({
     forMessage(message) {
+      const senderId = window.ConversationController.ensureContactIds({
+        e164: message.get('source'),
+        uuid: message.get('sourceUuid'),
+      });
       const receipt = this.findWhere({
-        sender: message.get('source'),
+        senderId,
         timestamp: message.get('sent_at'),
       });
       if (receipt) {
@@ -34,19 +39,22 @@
           }
         );
 
-        const found = messages.find(
-          item =>
-            item.isIncoming() && item.get('source') === receipt.get('sender')
-        );
-        const notificationForMessage = found
-          ? Whisper.Notifications.findWhere({ messageId: found.id })
-          : null;
-        Whisper.Notifications.remove(notificationForMessage);
+        const found = messages.find(item => {
+          const senderId = window.ConversationController.ensureContactIds({
+            e164: item.get('source'),
+            uuid: item.get('sourceUuid'),
+          });
 
-        if (!found) {
+          return item.isIncoming() && senderId === receipt.get('senderId');
+        });
+        if (found) {
+          Whisper.Notifications.removeBy({ messageId: found.id });
+        } else {
           window.log.info(
             'No message for read sync',
+            receipt.get('senderId'),
             receipt.get('sender'),
+            receipt.get('senderUuid'),
             receipt.get('timestamp')
           );
           return;

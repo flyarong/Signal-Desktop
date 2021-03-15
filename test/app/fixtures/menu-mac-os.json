@@ -39,6 +39,15 @@
     ]
   },
   {
+    "label": "&File",
+    "submenu": [
+      {
+        "label": "Create/upload sticker pack",
+        "click": null
+      }
+    ]
+  },
+  {
     "label": "&Edit",
     "submenu": [
       {
@@ -153,6 +162,7 @@
       },
       {
         "label": "Show",
+        "accelerator": "CmdOrCtrl+Shift+0",
         "click": null
       },
       {
@@ -169,11 +179,20 @@
     "role": "help",
     "submenu": [
       {
-        "label": "Go to Release Notes",
+        "label": "Show Keyboard Shortcuts",
+        "accelerator": "CmdOrCtrl+/",
         "click": null
       },
       {
         "type": "separator"
+      },
+      {
+        "label": "Contact Us",
+        "click": null
+      },
+      {
+        "label": "Go to Release Notes",
+        "click": null
       },
       {
         "label": "Go to Forums",
@@ -184,7 +203,7 @@
         "click": null
       },
       {
-        "label": "Report an Issue",
+        "label": "Join the Beta",
         "click": null
       }
     ]

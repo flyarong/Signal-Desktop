@@ -1,9 +1,10 @@
+// Copyright 2018-2020 Signal Messenger, LLC
+// SPDX-License-Identifier: AGPL-3.0-only
+
 /* global $: false */
 /* global Whisper: false */
 
-$(document).on('keyup', e => {
-  'use strict';
-
+$(document).on('keydown', e => {
   if (e.keyCode === 27) {
     window.closeDebugLog();
   }

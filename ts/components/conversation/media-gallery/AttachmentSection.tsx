@@ -1,3 +1,6 @@
+// Copyright 2018-2020 Signal Messenger, LLC
+// SPDX-License-Identifier: AGPL-3.0-only
+
 import React from 'react';
 
 import { DocumentListItem } from './DocumentListItem';
@@ -7,16 +10,16 @@ import { MediaItemType } from '../../LightboxGallery';
 import { missingCaseError } from '../../../util/missingCaseError';
 import { LocalizerType } from '../../../types/Util';
 
-interface Props {
+export type Props = {
   i18n: LocalizerType;
   header?: string;
   type: 'media' | 'documents';
   mediaItems: Array<MediaItemType>;
   onItemClick?: (event: ItemClickEvent) => void;
-}
+};
 
 export class AttachmentSection extends React.Component<Props> {
-  public render() {
+  public render(): JSX.Element {
     const { header } = this.props;
 
     return (

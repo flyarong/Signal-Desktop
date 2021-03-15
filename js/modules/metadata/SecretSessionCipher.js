@@ -1,3 +1,6 @@
+// Copyright 2018-2020 Signal Messenger, LLC
+// SPDX-License-Identifier: AGPL-3.0-only
+
 /* global libsignal, textsecure */
 
 /* eslint-disable no-bitwise */
@@ -17,16 +20,18 @@ const {
   intsToByteHighAndLow,
   splitBytes,
   trimBytes,
-} = require('../crypto');
+} = require('../../../ts/Crypto');
 
 const REVOKED_CERTIFICATES = [];
 
-function SecretSessionCipher(storage) {
+function SecretSessionCipher(storage, options) {
   this.storage = storage;
 
   // We do this on construction because libsignal won't be available when this file loads
   const { SessionCipher } = libsignal;
   this.SessionCipher = SessionCipher;
+
+  this.options = options || {};
 }
 
 const CIPHERTEXT_VERSION = 1;
@@ -117,13 +122,14 @@ function _createSenderCertificateFromBuffer(serialized) {
     !certificate.identityKey ||
     !certificate.senderDevice ||
     !certificate.expires ||
-    !certificate.sender
+    !(certificate.sender || certificate.senderUuid)
   ) {
     throw new Error('Missing fields');
   }
 
   return {
     sender: certificate.sender,
+    senderUuid: certificate.senderUuid,
     senderDevice: certificate.senderDevice,
     expires: certificate.expires.toNumber(),
     identityKey: certificate.identityKey.toArrayBuffer(),
@@ -287,7 +293,8 @@ SecretSessionCipher.prototype = {
 
     const sessionCipher = new SessionCipher(
       signalProtocolStore,
-      destinationAddress
+      destinationAddress,
+      this.options
     );
 
     const message = await sessionCipher.encrypt(paddedPlaintext);
@@ -344,7 +351,7 @@ SecretSessionCipher.prototype = {
 
   // public Pair<SignalProtocolAddress, byte[]> decrypt(
   //   CertificateValidator validator, byte[] ciphertext, long timestamp)
-  async decrypt(validator, ciphertext, timestamp, me) {
+  async decrypt(validator, ciphertext, timestamp, me = {}) {
     // Capture this.xxx variables to replicate Java's implicit this syntax
     const signalProtocolStore = this.storage;
     const _calculateEphemeralKeys = this._calculateEphemeralKeys.bind(this);
@@ -401,18 +408,29 @@ SecretSessionCipher.prototype = {
       );
     }
 
-    const { sender, senderDevice } = content.senderCertificate;
-    const { number, deviceId } = me || {};
-    if (sender === number && senderDevice === deviceId) {
+    const { sender, senderUuid, senderDevice } = content.senderCertificate;
+    if (
+      ((sender && me.number && sender === me.number) ||
+        (senderUuid && me.uuid && senderUuid === me.uuid)) &&
+      senderDevice === me.deviceId
+    ) {
       return {
         isMe: true,
       };
     }
-    const address = new libsignal.SignalProtocolAddress(sender, senderDevice);
+    const addressE164 =
+      sender && new libsignal.SignalProtocolAddress(sender, senderDevice);
+    const addressUuid =
+      senderUuid &&
+      new libsignal.SignalProtocolAddress(
+        senderUuid.toLowerCase(),
+        senderDevice
+      );
 
     try {
       return {
-        sender: address,
+        sender: addressE164,
+        senderUuid: addressUuid,
         content: await _decryptWithUnidentifiedSenderMessage(content),
       };
     } catch (error) {
@@ -421,7 +439,8 @@ SecretSessionCipher.prototype = {
         error = new Error('Decryption error was falsey!');
       }
 
-      error.sender = address;
+      error.sender = addressE164;
+      error.senderUuid = addressUuid;
 
       throw error;
     }
@@ -432,7 +451,11 @@ SecretSessionCipher.prototype = {
     const { SessionCipher } = this;
     const signalProtocolStore = this.storage;
 
-    const cipher = new SessionCipher(signalProtocolStore, remoteAddress);
+    const cipher = new SessionCipher(
+      signalProtocolStore,
+      remoteAddress,
+      this.options
+    );
 
     return cipher.getSessionVersion();
   },
@@ -442,7 +465,11 @@ SecretSessionCipher.prototype = {
     const { SessionCipher } = this;
     const signalProtocolStore = this.storage;
 
-    const cipher = new SessionCipher(signalProtocolStore, remoteAddress);
+    const cipher = new SessionCipher(
+      signalProtocolStore,
+      remoteAddress,
+      this.options
+    );
 
     return cipher.getRemoteRegistrationId();
   },
@@ -452,7 +479,11 @@ SecretSessionCipher.prototype = {
     const { SessionCipher } = this;
     const signalProtocolStore = this.storage;
 
-    const cipher = new SessionCipher(signalProtocolStore, remoteAddress);
+    const cipher = new SessionCipher(
+      signalProtocolStore,
+      remoteAddress,
+      this.options
+    );
 
     return cipher.closeOpenSessionForDevice();
   },
@@ -504,7 +535,7 @@ SecretSessionCipher.prototype = {
     const signalProtocolStore = this.storage;
 
     const sender = new libsignal.SignalProtocolAddress(
-      message.senderCertificate.sender,
+      message.senderCertificate.senderUuid || message.senderCertificate.sender,
       message.senderCertificate.senderDevice
     );
 
@@ -512,12 +543,14 @@ SecretSessionCipher.prototype = {
       case CiphertextMessage.WHISPER_TYPE:
         return new SessionCipher(
           signalProtocolStore,
-          sender
+          sender,
+          this.options
         ).decryptWhisperMessage(message.content);
       case CiphertextMessage.PREKEY_TYPE:
         return new SessionCipher(
           signalProtocolStore,
-          sender
+          sender,
+          this.options
         ).decryptPreKeyWhisperMessage(message.content);
       default:
         throw new Error(`Unknown type: ${message.type}`);

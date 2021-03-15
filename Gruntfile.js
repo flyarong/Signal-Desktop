@@ -1,5 +1,7 @@
-const path = require('path');
-const packageJson = require('./package.json');
+// Copyright 2014-2020 Signal Messenger, LLC
+// SPDX-License-Identifier: AGPL-3.0-only
+
+const { join } = require('path');
 const importOnce = require('node-sass-import-once');
 const rimraf = require('rimraf');
 const mkdirp = require('mkdirp');
@@ -8,6 +10,7 @@ const asar = require('asar');
 const fs = require('fs');
 const assert = require('assert');
 const sass = require('node-sass');
+const packageJson = require('./package.json');
 
 /* eslint-disable more/no-then, no-console  */
 
@@ -53,28 +56,12 @@ module.exports = grunt => {
           footer: '})();\n',
         },
         src: [
-          'libtextsecure/errors.js',
           'libtextsecure/libsignal-protocol.js',
           'libtextsecure/protocol_wrapper.js',
 
-          'libtextsecure/crypto.js',
-          'libtextsecure/storage.js',
           'libtextsecure/storage/user.js',
-          'libtextsecure/storage/groups.js',
           'libtextsecure/storage/unprocessed.js',
           'libtextsecure/protobufs.js',
-          'libtextsecure/helpers.js',
-          'libtextsecure/stringview.js',
-          'libtextsecure/event_target.js',
-          'libtextsecure/account_manager.js',
-          'libtextsecure/websocket-resources.js',
-          'libtextsecure/message_receiver.js',
-          'libtextsecure/outgoing_message.js',
-          'libtextsecure/sendmessage.js',
-          'libtextsecure/sync_request.js',
-          'libtextsecure/contacts_parser.js',
-          'libtextsecure/ProvisioningCipher.js',
-          'libtextsecure/task_with_timeout.js',
         ],
         dest: 'js/libtextsecure.js',
       },
@@ -98,6 +85,7 @@ module.exports = grunt => {
       dev: {
         files: {
           'stylesheets/manifest.css': 'stylesheets/manifest.scss',
+          'stylesheets/manifest_bridge.css': 'stylesheets/manifest_bridge.scss',
         },
       },
     },
@@ -149,18 +137,12 @@ module.exports = grunt => {
     },
     'test-release': {
       osx: {
-        archive: `mac/${
-          packageJson.productName
-        }.app/Contents/Resources/app.asar`,
-        exe: `mac/${packageJson.productName}.app/Contents/MacOS/${
-          packageJson.productName
-        }`,
+        archive: `mac/${packageJson.productName}.app/Contents/Resources/app.asar`,
+        exe: `mac/${packageJson.productName}.app/Contents/MacOS/${packageJson.productName}`,
       },
       mas: {
         archive: 'mas/Signal.app/Contents/Resources/app.asar',
-        exe: `mas/${packageJson.productName}.app/Contents/MacOS/${
-          packageJson.productName
-        }`,
+        exe: `mas/${packageJson.productName}.app/Contents/MacOS/${packageJson.productName}`,
       },
       linux: {
         archive: 'linux-unpacked/resources/app.asar',
@@ -228,9 +210,13 @@ module.exports = grunt => {
     const { Application } = spectron;
     const electronBinary =
       process.platform === 'win32' ? 'electron.cmd' : 'electron';
+
+    const path = join(__dirname, 'node_modules', '.bin', electronBinary);
+    const args = [join(__dirname, 'main.js')];
+    console.log('Starting path', path, 'with args', args);
     const app = new Application({
-      path: path.join(__dirname, 'node_modules', '.bin', electronBinary),
-      args: [path.join(__dirname, 'main.js')],
+      path,
+      args,
       env: {
         NODE_ENV: environment,
       },
@@ -244,19 +230,24 @@ module.exports = grunt => {
 
     app
       .start()
-      .then(() =>
-        app.client.waitUntil(
+      .then(() => {
+        console.log('App started. Now waiting for test results...');
+        return app.client.waitUntil(
           () =>
             app.client
               .execute(getMochaResults)
               .then(data => Boolean(data.value)),
           25000,
           'Expected to find window.mochaResults set!'
-        )
-      )
+        );
+      })
       .then(() => app.client.execute(getMochaResults))
       .then(data => {
         const results = data.value;
+        if (!results) {
+          failure = () => grunt.fail.fatal("Couldn't extract test results.");
+          return app.client.log('browser');
+        }
         if (results.failures > 0) {
           console.error(results.reports);
           failure = () =>
@@ -373,14 +364,23 @@ module.exports = grunt => {
       // A simple test to verify a visible window is opened with a title
       const { Application } = spectron;
 
+      const path = [dir, config.exe].join('/');
+      console.log('Starting path', path);
       const app = new Application({
-        path: [dir, config.exe].join('/'),
-        requireName: 'unused',
+        path,
       });
 
-      app
-        .start()
-        .then(() => app.client.getWindowCount())
+      const sleep = millis =>
+        new Promise(resolve => setTimeout(resolve, millis));
+
+      Promise.race([app.start(), sleep(15000)])
+        .then(() => {
+          if (!app.isRunning()) {
+            throw new Error('Application failed to start');
+          }
+
+          return app.client.getWindowCount();
+        })
         .then(count => {
           assert.equal(count, 1);
           console.log('window opened');
@@ -410,6 +410,17 @@ module.exports = grunt => {
               grunt.fail.fatal(`Test failed: ${error.message} ${error.stack}`);
             })
         )
+        .catch(error => {
+          console.log('Main process logs:');
+          app.client.getMainProcessLogs().then(logs => {
+            logs.forEach(log => {
+              console.log(log);
+            });
+
+            // Test failed!
+            grunt.fail.fatal(`Failure! ${error.message} ${error.stack}`);
+          });
+        })
         .then(done);
     }
   );

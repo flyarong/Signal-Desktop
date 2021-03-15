@@ -1,3 +1,6 @@
+// Copyright 2018-2020 Signal Messenger, LLC
+// SPDX-License-Identifier: AGPL-3.0-only
+
 import moment from 'moment';
 import { compact, groupBy, sortBy } from 'lodash';
 
@@ -8,10 +11,10 @@ import { MediaItemType } from '../../LightboxGallery';
 type StaticSectionType = 'today' | 'yesterday' | 'thisWeek' | 'thisMonth';
 type YearMonthSectionType = 'yearMonth';
 
-interface GenericSection<T> {
+type GenericSection<T> = {
   type: T;
   mediaItems: Array<MediaItemType>;
-}
+};
 type StaticSection = GenericSection<StaticSectionType>;
 type YearMonthSection = GenericSection<YearMonthSectionType> & {
   year: number;
@@ -67,11 +70,13 @@ const toSection = (
     case 'yesterday':
     case 'thisWeek':
     case 'thisMonth':
+      // eslint-disable-next-line consistent-return
       return {
         type: firstMediaItemWithSection.type,
         mediaItems,
       };
     case 'yearMonth':
+      // eslint-disable-next-line consistent-return
       return {
         type: firstMediaItemWithSection.type,
         year: firstMediaItemWithSection.year,
@@ -83,15 +88,16 @@ const toSection = (
       // error TS2345: Argument of type 'any' is not assignable to parameter
       // of type 'never'.
       // return missingCaseError(firstMediaItemWithSection.type);
+      // eslint-disable-next-line no-useless-return
       return;
   }
 };
 
-interface GenericMediaItemWithSection<T> {
+type GenericMediaItemWithSection<T> = {
   order: number;
   type: T;
   mediaItem: MediaItemType;
-}
+};
 type MediaItemWithStaticSection = GenericMediaItemWithSection<
   StaticSectionType
 >;
@@ -109,9 +115,7 @@ const withSection = (referenceDateTime: moment.Moment) => (
   mediaItem: MediaItemType
 ): MediaItemWithSection => {
   const today = moment(referenceDateTime).startOf('day');
-  const yesterday = moment(referenceDateTime)
-    .subtract(1, 'day')
-    .startOf('day');
+  const yesterday = moment(referenceDateTime).subtract(1, 'day').startOf('day');
   const thisWeek = moment(referenceDateTime).startOf('isoWeek');
   const thisMonth = moment(referenceDateTime).startOf('month');
 

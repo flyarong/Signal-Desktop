@@ -1,15 +1,23 @@
+// Copyright 2019-2020 Signal Messenger, LLC
+// SPDX-License-Identifier: AGPL-3.0-only
+
 import * as React from 'react';
 import classNames from 'classnames';
 import { LocalizerType } from '../types/Util';
 
+export type ActionSpec = {
+  text: string;
+  action: () => unknown;
+  style?: 'affirmative' | 'negative';
+};
+
 export type OwnProps = {
+  readonly actions: Array<ActionSpec>;
+  readonly cancelText?: string;
+  readonly children?: React.ReactNode;
   readonly i18n: LocalizerType;
-  readonly children: React.ReactNode;
-  readonly affirmativeText?: string;
-  readonly onAffirmative?: () => unknown;
   readonly onClose: () => unknown;
-  readonly negativeText?: string;
-  readonly onNegative?: () => unknown;
+  readonly title?: string | React.ReactNode;
 };
 
 export type Props = OwnProps;
@@ -21,30 +29,19 @@ function focusRef(el: HTMLElement | null) {
 }
 
 export const ConfirmationDialog = React.memo(
-  ({
-    i18n,
-    onClose,
-    children,
-    onAffirmative,
-    onNegative,
-    affirmativeText,
-    negativeText,
-  }: Props) => {
-    React.useEffect(
-      () => {
-        const handler = ({ key }: KeyboardEvent) => {
-          if (key === 'Escape') {
-            onClose();
-          }
-        };
-        document.addEventListener('keyup', handler);
+  ({ i18n, onClose, cancelText, children, title, actions }: Props) => {
+    React.useEffect(() => {
+      const handler = ({ key }: KeyboardEvent) => {
+        if (key === 'Escape') {
+          onClose();
+        }
+      };
+      document.addEventListener('keydown', handler);
 
-        return () => {
-          document.removeEventListener('keyup', handler);
-        };
-      },
-      [onClose]
-    );
+      return () => {
+        document.removeEventListener('keydown', handler);
+      };
+    }, [onClose]);
 
     const handleCancel = React.useCallback(
       (e: React.MouseEvent) => {
@@ -55,62 +52,59 @@ export const ConfirmationDialog = React.memo(
       [onClose]
     );
 
-    const handleNegative = React.useCallback(
-      () => {
-        onClose();
-        if (onNegative) {
-          onNegative();
+    const handleAction = React.useCallback(
+      (e: React.MouseEvent<HTMLButtonElement>) => {
+        if (e.currentTarget.dataset.action) {
+          const actionIndex = parseInt(e.currentTarget.dataset.action, 10);
+          const { action } = actions[actionIndex];
+          action();
         }
-      },
-      [onClose, onNegative]
-    );
-
-    const handleAffirmative = React.useCallback(
-      () => {
         onClose();
-        if (onAffirmative) {
-          onAffirmative();
-        }
       },
-      [onClose, onAffirmative]
+      [onClose, actions]
     );
 
     return (
       <div className="module-confirmation-dialog__container">
+        {title ? (
+          <h1 className="module-confirmation-dialog__container__title">
+            {title}
+          </h1>
+        ) : null}
         <div className="module-confirmation-dialog__container__content">
           {children}
         </div>
-        <div className="module-confirmation-dialog__container__buttons">
-          <button
-            onClick={handleCancel}
-            ref={focusRef}
-            className="module-confirmation-dialog__container__buttons__button"
-          >
-            {i18n('confirmation-dialog--Cancel')}
-          </button>
-          {onNegative && negativeText ? (
+        {actions.length > 0 && (
+          <div className="module-confirmation-dialog__container__buttons">
             <button
-              onClick={handleNegative}
-              className={classNames(
-                'module-confirmation-dialog__container__buttons__button',
-                'module-confirmation-dialog__container__buttons__button--negative'
-              )}
+              type="button"
+              onClick={handleCancel}
+              ref={focusRef}
+              className="module-confirmation-dialog__container__buttons__button"
             >
-              {negativeText}
+              {cancelText || i18n('confirmation-dialog--Cancel')}
             </button>
-          ) : null}
-          {onAffirmative && affirmativeText ? (
-            <button
-              onClick={handleAffirmative}
-              className={classNames(
-                'module-confirmation-dialog__container__buttons__button',
-                'module-confirmation-dialog__container__buttons__button--affirmative'
-              )}
-            >
-              {affirmativeText}
-            </button>
-          ) : null}
-        </div>
+            {actions.map((action, i) => (
+              <button
+                type="button"
+                key={action.text}
+                onClick={handleAction}
+                data-action={i}
+                className={classNames(
+                  'module-confirmation-dialog__container__buttons__button',
+                  action.style === 'affirmative'
+                    ? 'module-confirmation-dialog__container__buttons__button--affirmative'
+                    : null,
+                  action.style === 'negative'
+                    ? 'module-confirmation-dialog__container__buttons__button--negative'
+                    : null
+                )}
+              >
+                {action.text}
+              </button>
+            ))}
+          </div>
+        )}
       </div>
     );
   }

@@ -1,12 +1,10 @@
+// Copyright 2019-2020 Signal Messenger, LLC
+// SPDX-License-Identifier: AGPL-3.0-only
+
 import * as React from 'react';
-import { Editor } from 'draft-js';
-import { noop } from 'lodash';
+import { get, noop } from 'lodash';
 import classNames from 'classnames';
-import {
-  EmojiButton,
-  EmojiPickDataType,
-  Props as EmojiButtonProps,
-} from './emoji/EmojiButton';
+import { EmojiButton, Props as EmojiButtonProps } from './emoji/EmojiButton';
 import {
   Props as StickerButtonProps,
   StickerButton,
@@ -16,13 +14,36 @@ import {
   InputApi,
   Props as CompositionInputProps,
 } from './CompositionInput';
+import {
+  MessageRequestActions,
+  Props as MessageRequestActionsProps,
+} from './conversation/MessageRequestActions';
+import {
+  GroupV1DisabledActions,
+  PropsType as GroupV1DisabledActionsPropsType,
+} from './conversation/GroupV1DisabledActions';
+import {
+  GroupV2PendingApprovalActions,
+  PropsType as GroupV2PendingApprovalActionsPropsType,
+} from './conversation/GroupV2PendingApprovalActions';
+import { MandatoryProfileSharingActions } from './conversation/MandatoryProfileSharingActions';
 import { countStickers } from './stickers/lib';
 import { LocalizerType } from '../types/Util';
+import { EmojiPickDataType } from './emoji/EmojiPicker';
 
 export type OwnProps = {
   readonly i18n: LocalizerType;
+  readonly areWePending?: boolean;
+  readonly areWePendingApproval?: boolean;
+  readonly groupVersion?: 1 | 2;
+  readonly isGroupV1AndDisabled?: boolean;
+  readonly isMissingMandatoryProfileSharing?: boolean;
+  readonly left?: boolean;
+  readonly messageRequestsEnabled?: boolean;
+  readonly acceptedMessageRequest?: boolean;
   readonly compositionApi?: React.MutableRefObject<{
     focusInput: () => void;
+    isDirty: () => boolean;
     setDisabled: (disabled: boolean) => void;
     setShowMic: (showMic: boolean) => void;
     setMicActive: (micActive: boolean) => void;
@@ -38,11 +59,14 @@ export type OwnProps = {
 
 export type Props = Pick<
   CompositionInputProps,
+  | 'sortedGroupMembers'
   | 'onSubmit'
-  | 'onEditorSizeChange'
   | 'onEditorStateChange'
   | 'onTextTooLong'
-  | 'startingText'
+  | 'draftText'
+  | 'draftBodyRanges'
+  | 'clearQuotedMessage'
+  | 'getQuotedMessage'
 > &
   Pick<
     EmojiButtonProps,
@@ -52,6 +76,7 @@ export type Props = Pick<
     StickerButtonProps,
     | 'knownPacks'
     | 'receivedPacks'
+    | 'installedPack'
     | 'installedPacks'
     | 'blessedPacks'
     | 'recentStickers'
@@ -62,14 +87,17 @@ export type Props = Pick<
     | 'showPickerHint'
     | 'clearShowPickerHint'
   > &
+  MessageRequestActionsProps &
+  Pick<GroupV1DisabledActionsPropsType, 'onStartGroupMigration'> &
+  Pick<GroupV2PendingApprovalActionsPropsType, 'onCancelJoinRequest'> &
   OwnProps;
 
 const emptyElement = (el: HTMLElement) => {
-  // tslint:disable-next-line no-inner-html
+  // Necessary to deal with Backbone views
+  // eslint-disable-next-line no-param-reassign
   el.innerHTML = '';
 };
 
-// tslint:disable-next-line max-func-body-length
 export const CompositionArea = ({
   i18n,
   attachmentListEl,
@@ -78,10 +106,13 @@ export const CompositionArea = ({
   // CompositionInput
   onSubmit,
   compositionApi,
-  onEditorSizeChange,
   onEditorStateChange,
   onTextTooLong,
-  startingText,
+  draftText,
+  draftBodyRanges,
+  clearQuotedMessage,
+  getQuotedMessage,
+  sortedGroupMembers,
   // EmojiButton
   onPickEmoji,
   onSetSkinTone,
@@ -90,6 +121,7 @@ export const CompositionArea = ({
   // StickerButton
   knownPacks,
   receivedPacks,
+  installedPack,
   installedPacks,
   blessedPacks,
   recentStickers,
@@ -99,24 +131,44 @@ export const CompositionArea = ({
   clearShowIntroduction,
   showPickerHint,
   clearShowPickerHint,
-}: Props) => {
+  // Message Requests
+  acceptedMessageRequest,
+  areWePending,
+  areWePendingApproval,
+  conversationType,
+  groupVersion,
+  isBlocked,
+  isMissingMandatoryProfileSharing,
+  left,
+  messageRequestsEnabled,
+  name,
+  onAccept,
+  onBlock,
+  onBlockAndDelete,
+  onDelete,
+  onUnblock,
+  phoneNumber,
+  profileName,
+  title,
+  // GroupV1 Disabled Actions
+  isGroupV1AndDisabled,
+  onStartGroupMigration,
+  // GroupV2 Pending Approval Actions
+  onCancelJoinRequest,
+}: Props): JSX.Element => {
   const [disabled, setDisabled] = React.useState(false);
-  const [showMic, setShowMic] = React.useState(!startingText);
+  const [showMic, setShowMic] = React.useState(!draftText);
   const [micActive, setMicActive] = React.useState(false);
   const [dirty, setDirty] = React.useState(false);
   const [large, setLarge] = React.useState(false);
-  const editorRef = React.useRef<Editor>(null);
   const inputApiRef = React.useRef<InputApi | undefined>();
 
-  const handleForceSend = React.useCallback(
-    () => {
-      setLarge(false);
-      if (inputApiRef.current) {
-        inputApiRef.current.submit();
-      }
-    },
-    [inputApiRef, setLarge]
-  );
+  const handleForceSend = React.useCallback(() => {
+    setLarge(false);
+    if (inputApiRef.current) {
+      inputApiRef.current.submit();
+    }
+  }, [inputApiRef, setLarge]);
 
   const handleSubmit = React.useCallback<typeof onSubmit>(
     (...args) => {
@@ -126,14 +178,11 @@ export const CompositionArea = ({
     [setLarge, onSubmit]
   );
 
-  const focusInput = React.useCallback(
-    () => {
-      if (editorRef.current) {
-        editorRef.current.focus();
-      }
-    },
-    [editorRef]
-  );
+  const focusInput = React.useCallback(() => {
+    if (inputApiRef.current) {
+      inputApiRef.current.focus();
+    }
+  }, [inputApiRef]);
 
   const withStickers =
     countStickers({
@@ -147,7 +196,10 @@ export const CompositionArea = ({
   const attSlotRef = React.useRef<HTMLDivElement>(null);
 
   if (compositionApi) {
+    // Using a React.MutableRefObject, so we need to reassign this prop.
+    // eslint-disable-next-line no-param-reassign
     compositionApi.current = {
+      isDirty: () => dirty,
       focusInput,
       setDisabled,
       setShowMic,
@@ -176,40 +228,31 @@ export const CompositionArea = ({
     [inputApiRef, onPickEmoji]
   );
 
-  const handleToggleLarge = React.useCallback(
-    () => {
-      setLarge(l => !l);
-    },
-    [setLarge]
-  );
+  const handleToggleLarge = React.useCallback(() => {
+    setLarge(l => !l);
+  }, [setLarge]);
 
   // The following is a work-around to allow react to lay-out backbone-managed
   // dom nodes until those functions are in React
   const micCellRef = React.useRef<HTMLDivElement>(null);
-  React.useLayoutEffect(
-    () => {
-      const { current: micCellContainer } = micCellRef;
-      if (micCellContainer && micCellEl) {
-        emptyElement(micCellContainer);
-        micCellContainer.appendChild(micCellEl);
-      }
+  React.useLayoutEffect(() => {
+    const { current: micCellContainer } = micCellRef;
+    if (micCellContainer && micCellEl) {
+      emptyElement(micCellContainer);
+      micCellContainer.appendChild(micCellEl);
+    }
 
-      return noop;
-    },
-    [micCellRef, micCellEl, large, dirty, showMic]
-  );
+    return noop;
+  }, [micCellRef, micCellEl, large, dirty, showMic]);
 
-  React.useLayoutEffect(
-    () => {
-      const { current: attSlot } = attSlotRef;
-      if (attSlot && attachmentListEl) {
-        attSlot.appendChild(attachmentListEl);
-      }
+  React.useLayoutEffect(() => {
+    const { current: attSlot } = attSlotRef;
+    if (attSlot && attachmentListEl) {
+      attSlot.appendChild(attachmentListEl);
+    }
 
-      return noop;
-    },
-    [attSlotRef, attachmentListEl]
-  );
+    return noop;
+  }, [attSlotRef, attachmentListEl]);
 
   const emojiButtonFragment = (
     <div className="module-composition-area__button-cell">
@@ -217,10 +260,10 @@ export const CompositionArea = ({
         i18n={i18n}
         doSend={handleForceSend}
         onPickEmoji={insertEmoji}
+        onClose={focusInput}
         recentEmojis={recentEmojis}
         skinTone={skinTone}
         onSetSkinTone={onSetSkinTone}
-        onClose={focusInput}
       />
     </div>
   );
@@ -230,7 +273,10 @@ export const CompositionArea = ({
       className={classNames(
         'module-composition-area__button-cell',
         micActive ? 'module-composition-area__button-cell--mic-active' : null,
-        large ? 'module-composition-area__button-cell--large-right' : null
+        large ? 'module-composition-area__button-cell--large-right' : null,
+        micActive && large
+          ? 'module-composition-area__button-cell--large-right-mic-active'
+          : null
       )}
       ref={micCellRef}
     />
@@ -239,7 +285,12 @@ export const CompositionArea = ({
   const attButton = (
     <div className="module-composition-area__button-cell">
       <div className="choose-file">
-        <button className="paperclip thumbnail" onClick={onChooseAttachment} />
+        <button
+          type="button"
+          className="paperclip thumbnail"
+          onClick={onChooseAttachment}
+          aria-label={i18n('CompositionArea--attach-file')}
+        />
       </div>
     </div>
   );
@@ -252,8 +303,10 @@ export const CompositionArea = ({
       )}
     >
       <button
+        type="button"
         className="module-composition-area__send-button"
         onClick={handleForceSend}
+        aria-label={i18n('sendMessageToContact')}
       />
     </div>
   );
@@ -265,6 +318,7 @@ export const CompositionArea = ({
         i18n={i18n}
         knownPacks={knownPacks}
         receivedPacks={receivedPacks}
+        installedPack={installedPack}
         installedPacks={installedPacks}
         blessedPacks={blessedPacks}
         recentStickers={recentStickers}
@@ -280,40 +334,109 @@ export const CompositionArea = ({
   ) : null;
 
   // Listen for cmd/ctrl-shift-x to toggle large composition mode
-  React.useEffect(
-    () => {
-      const handler = (e: KeyboardEvent) => {
-        const { key, shiftKey, ctrlKey, metaKey } = e;
-        // When using the ctrl key, `key` is `'X'`. When using the cmd key, `key` is `'x'`
-        const xKey = key === 'x' || key === 'X';
-        const cmdOrCtrl = ctrlKey || metaKey;
-        // cmd/ctrl-shift-x
-        if (xKey && shiftKey && cmdOrCtrl) {
-          e.preventDefault();
-          setLarge(x => !x);
-        }
-      };
+  React.useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      const { key, shiftKey, ctrlKey, metaKey } = e;
+      // When using the ctrl key, `key` is `'X'`. When using the cmd key, `key` is `'x'`
+      const xKey = key === 'x' || key === 'X';
+      const commandKey = get(window, 'platform') === 'darwin' && metaKey;
+      const controlKey = get(window, 'platform') !== 'darwin' && ctrlKey;
+      const commandOrCtrl = commandKey || controlKey;
 
-      document.addEventListener('keydown', handler);
+      // cmd/ctrl-shift-x
+      if (xKey && shiftKey && commandOrCtrl) {
+        e.preventDefault();
+        setLarge(x => !x);
+      }
+    };
 
-      return () => {
-        document.removeEventListener('keydown', handler);
-      };
-    },
-    [setLarge]
-  );
+    document.addEventListener('keydown', handler);
+
+    return () => {
+      document.removeEventListener('keydown', handler);
+    };
+  }, [setLarge]);
+
+  if (
+    isBlocked ||
+    areWePending ||
+    (messageRequestsEnabled && !acceptedMessageRequest)
+  ) {
+    return (
+      <MessageRequestActions
+        i18n={i18n}
+        conversationType={conversationType}
+        isBlocked={isBlocked}
+        onBlock={onBlock}
+        onBlockAndDelete={onBlockAndDelete}
+        onUnblock={onUnblock}
+        onDelete={onDelete}
+        onAccept={onAccept}
+        name={name}
+        profileName={profileName}
+        phoneNumber={phoneNumber}
+        title={title}
+      />
+    );
+  }
+
+  // If no message request, but we haven't shared profile yet, we show profile-sharing UI
+  if (
+    !left &&
+    (conversationType === 'direct' ||
+      (conversationType === 'group' && groupVersion === 1)) &&
+    isMissingMandatoryProfileSharing
+  ) {
+    return (
+      <MandatoryProfileSharingActions
+        i18n={i18n}
+        conversationType={conversationType}
+        onBlock={onBlock}
+        onBlockAndDelete={onBlockAndDelete}
+        onDelete={onDelete}
+        onAccept={onAccept}
+        name={name}
+        profileName={profileName}
+        phoneNumber={phoneNumber}
+        title={title}
+      />
+    );
+  }
+
+  // If this is a V1 group, now disabled entirely, we show UI to help them upgrade
+  if (!left && isGroupV1AndDisabled) {
+    return (
+      <GroupV1DisabledActions
+        i18n={i18n}
+        onStartGroupMigration={onStartGroupMigration}
+      />
+    );
+  }
+
+  if (areWePendingApproval) {
+    return (
+      <GroupV2PendingApprovalActions
+        i18n={i18n}
+        onCancelJoinRequest={onCancelJoinRequest}
+      />
+    );
+  }
 
   return (
     <div className="module-composition-area">
       <div className="module-composition-area__toggle-large">
         <button
+          type="button"
           className={classNames(
             'module-composition-area__toggle-large__button',
             large
               ? 'module-composition-area__toggle-large__button--large-active'
               : null
           )}
+          // This prevents the user from tabbing here
+          tabIndex={-1}
           onClick={handleToggleLarge}
+          aria-label={i18n('CompositionArea--expand')}
         />
       </div>
       <div
@@ -335,16 +458,18 @@ export const CompositionArea = ({
             i18n={i18n}
             disabled={disabled}
             large={large}
-            editorRef={editorRef}
             inputApi={inputApiRef}
             onPickEmoji={onPickEmoji}
             onSubmit={handleSubmit}
-            onEditorSizeChange={onEditorSizeChange}
             onEditorStateChange={onEditorStateChange}
             onTextTooLong={onTextTooLong}
             onDirtyChange={setDirty}
             skinTone={skinTone}
-            startingText={startingText}
+            draftText={draftText}
+            draftBodyRanges={draftBodyRanges}
+            clearQuotedMessage={clearQuotedMessage}
+            getQuotedMessage={getQuotedMessage}
+            sortedGroupMembers={sortedGroupMembers}
           />
         </div>
         {!large ? (

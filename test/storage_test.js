@@ -1,4 +1,7 @@
-/* global _, textsecure, libsignal, storage */
+// Copyright 2015-2020 Signal Messenger, LLC
+// SPDX-License-Identifier: AGPL-3.0-only
+
+/* global _, textsecure, libsignal, storage, ConversationController */
 
 'use strict';
 
@@ -8,7 +11,7 @@ describe('SignalProtocolStore', () => {
   let identityKey;
   let testKey;
 
-  before(done => {
+  before(async () => {
     store = textsecure.storage.protocol;
     store.hydrateCaches();
     identityKey = {
@@ -22,7 +25,10 @@ describe('SignalProtocolStore', () => {
 
     storage.put('registrationId', 1337);
     storage.put('identityKey', identityKey);
-    storage.fetch().then(done, done);
+    await storage.fetch();
+    ConversationController.reset();
+    await ConversationController.load();
+    await ConversationController.getOrCreateAndWait(number, 'private');
   });
 
   describe('getLocalRegistrationId', () => {
@@ -969,16 +975,38 @@ describe('SignalProtocolStore', () => {
   });
   describe('getDeviceIds', () => {
     it('returns deviceIds for a number', async () => {
-      const testRecord = 'an opaque string';
-      const devices = [1, 2, 3, 10].map(deviceId => {
+      const openRecord = JSON.stringify({
+        version: 'v1',
+        sessions: {
+          ephemeralKey: {
+            registrationId: 25,
+            indexInfo: {
+              closed: -1,
+            },
+          },
+        },
+      });
+      const openDevices = [1, 2, 3, 10].map(deviceId => {
         return [number, deviceId].join('.');
       });
-
       await Promise.all(
-        devices.map(async encodedNumber => {
-          await store.storeSession(encodedNumber, testRecord + encodedNumber);
+        openDevices.map(async encodedNumber => {
+          await store.storeSession(encodedNumber, openRecord);
         })
       );
+
+      const closedRecord = JSON.stringify({
+        version: 'v1',
+        sessions: {
+          ephemeralKey: {
+            registrationId: 24,
+            indexInfo: {
+              closed: Date.now(),
+            },
+          },
+        },
+      });
+      await store.storeSession([number, 11].join('.'), closedRecord);
 
       const deviceIds = await store.getDeviceIds(number);
       assert.sameMembers(deviceIds, [1, 2, 3, 10]);

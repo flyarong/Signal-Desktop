@@ -1,3 +1,6 @@
+// Copyright 2015-2020 Signal Messenger, LLC
+// SPDX-License-Identifier: AGPL-3.0-only
+
 /* global libsignal, textsecure */
 
 describe('Key generation', function thisNeeded() {
@@ -50,12 +53,12 @@ describe('Key generation', function thisNeeded() {
   describe('the first time', () => {
     let result;
     /* result should have this format
-         * {
-         *   preKeys: [ { keyId, publicKey }, ... ],
-         *   signedPreKey: { keyId, publicKey, signature },
-         *   identityKey: <ArrayBuffer>
-         * }
-         */
+     * {
+     *   preKeys: [ { keyId, publicKey }, ... ],
+     *   signedPreKey: { keyId, publicKey, signature },
+     *   identityKey: <ArrayBuffer>
+     * }
+     */
     before(() => {
       const accountManager = new textsecure.AccountManager('');
       return accountManager.generateKeys(count).then(res => {

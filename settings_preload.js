@@ -1,40 +1,45 @@
+// Copyright 2018-2021 Signal Messenger, LLC
+// SPDX-License-Identifier: AGPL-3.0-only
+
 /* global window */
 
 const { ipcRenderer, remote } = require('electron');
 
 const url = require('url');
 const i18n = require('./js/modules/i18n');
+const {
+  getEnvironment,
+  setEnvironment,
+  parseEnvironment,
+} = require('./ts/environment');
 
 const config = url.parse(window.location.toString(), true).query;
 const { locale } = config;
 const localeMessages = ipcRenderer.sendSync('locale-data');
+setEnvironment(parseEnvironment(config.environment));
 
-const { systemPreferences } = remote.require('electron');
+const { nativeTheme } = remote.require('electron');
 
 window.platform = process.platform;
 window.theme = config.theme;
 window.i18n = i18n.setup(locale, localeMessages);
+window.appStartInitialSpellcheckSetting =
+  config.appStartInitialSpellcheckSetting === 'true';
 
 function setSystemTheme() {
-  window.systemTheme = systemPreferences.isDarkMode() ? 'dark' : 'light';
+  window.systemTheme = nativeTheme.shouldUseDarkColors ? 'dark' : 'light';
 }
 
 setSystemTheme();
 
 window.subscribeToSystemThemeChange = fn => {
-  if (!systemPreferences.subscribeNotification) {
-    return;
-  }
-  systemPreferences.subscribeNotification(
-    'AppleInterfaceThemeChangedNotification',
-    () => {
-      setSystemTheme();
-      fn();
-    }
-  );
+  nativeTheme.on('updated', () => {
+    setSystemTheme();
+    fn();
+  });
 };
 
-window.getEnvironment = () => config.environment;
+window.getEnvironment = getEnvironment;
 window.getVersion = () => config.version;
 window.getAppInstance = () => config.appInstance;
 
@@ -59,13 +64,32 @@ window.setHideMenuBar = makeSetter('hide-menu-bar');
 window.getSpellCheck = makeGetter('spell-check');
 window.setSpellCheck = makeSetter('spell-check');
 
+window.getAlwaysRelayCalls = makeGetter('always-relay-calls');
+window.setAlwaysRelayCalls = makeSetter('always-relay-calls');
+
 window.getNotificationSetting = makeGetter('notification-setting');
 window.setNotificationSetting = makeSetter('notification-setting');
+window.getNotificationDrawAttention = makeGetter('notification-draw-attention');
+window.setNotificationDrawAttention = makeSetter('notification-draw-attention');
 window.getAudioNotification = makeGetter('audio-notification');
 window.setAudioNotification = makeSetter('audio-notification');
+window.getCallRingtoneNotification = makeGetter('call-ringtone-notification');
+window.setCallRingtoneNotification = makeSetter('call-ringtone-notification');
+window.getCallSystemNotification = makeGetter('call-system-notification');
+window.setCallSystemNotification = makeSetter('call-system-notification');
+window.getIncomingCallNotification = makeGetter('incoming-call-notification');
+window.setIncomingCallNotification = makeSetter('incoming-call-notification');
+window.getCountMutedConversations = makeGetter(
+  'badge-count-muted-conversations'
+);
+window.setCountMutedConversations = makeSetter(
+  'badge-count-muted-conversations'
+);
 
 window.getMediaPermissions = makeGetter('media-permissions');
 window.setMediaPermissions = makeSetter('media-permissions');
+window.getMediaCameraPermissions = makeGetter('media-camera-permissions');
+window.setMediaCameraPermissions = makeSetter('media-camera-permissions');
 
 window.isPrimary = makeGetter('is-primary');
 window.makeSyncRequest = makeGetter('sync-request');
@@ -102,4 +126,6 @@ function makeSetter(name) {
     });
 }
 
-require('./js/logging');
+require('./ts/logging/set_up_renderer_logging');
+
+window.Backbone = require('backbone');

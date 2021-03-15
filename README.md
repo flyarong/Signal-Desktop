@@ -1,5 +1,5 @@
-[![Build Status](https://travis-ci.org/signalapp/Signal-Desktop.svg?branch=master)](https://travis-ci.org/signalapp/Signal-Desktop)
-[![Build Status](https://ci.appveyor.com/api/projects/status/github/signalapp/Signal-Desktop?branch=master&svg=true)](https://ci.appveyor.com/project/Signal-Desktop/signal-desktop)
+<!-- Copyright 2014-2020 Signal Messenger, LLC -->
+<!-- SPDX-License-Identifier: AGPL-3.0-only -->
 
 # Signal Desktop
 
@@ -13,18 +13,22 @@ or [iOS](https://github.com/signalapp/Signal-iOS).
 
 You can install the beta version of Signal Desktop alongside the production version. The beta uses different data and install locations.
 
-* _Windows:_ First, download [this file](https://updates.signal.org/desktop/beta.yml) and look for the `url` property that specifies the location for the latest beta installer. Download the installer by constructing a final URL that looks like this: `https://updates.signal.org/desktop/<installer location>`. Then run the installer.
-* _macOS:_ First, download [this file](https://updates.signal.org/desktop/beta-mac.yml) and look for the `url` property that specifies the location for the latest beta installer. Download the installer by constructing a final URL that looks like this: `https://updates.signal.org/desktop/<package location>`. Then unzip that package and copy the `.app` file into the `/Applications` folder using Finder.
-* _Linux:_ Follow the production instructions to set up the APT repository and run `apt install signal-desktop-beta`.
+- _Windows:_ First, download [this file](https://updates.signal.org/desktop/beta.yml) and look for the `url` property that specifies the location for the latest beta installer. Download the installer by constructing a final URL that looks like this: `https://updates.signal.org/desktop/<installer location>`. Then run the installer.
+- _macOS:_ First, download [this file](https://updates.signal.org/desktop/beta-mac.yml) and look for the `url` property that specifies the location for the latest beta installer. Download the installer by constructing a final URL that looks like this: `https://updates.signal.org/desktop/<package location>`. Then unzip that package and copy the `.app` file into the `/Applications` folder using Finder.
+- _Linux:_ Follow the production instructions to set up the APT repository and run `apt install signal-desktop-beta`.
 
 ## Got a question?
 
 You can find answers to a number of frequently asked questions on our [support site](https://support.signal.org/).
 The [community forum](https://community.signalusers.org/) is another good place for questions.
 
-## Found a Bug? Have a feature request?
+## Found a Bug?
 
 Please search for any [existing issues](https://github.com/signalapp/Signal-Desktop/issues) that describe your bug in order to avoid duplicate submissions.
+
+## Have a feature request, question, comment?
+
+Please use our community forum: https://community.signalusers.org/
 
 ## Contributing Translations
 
@@ -39,7 +43,7 @@ for setup instructions and guidelines for new contributors. Don't forget to sign
 
 ## Contributing Funds
 
-You can donate to Signal development through the [Freedom of the Press Foundation](https://freedom.press/crowdfunding/signal/).
+You can donate to Signal development through the [Signal Technology Foundation](https://signal.org/donate), an independent 501c3 nonprofit.
 
 ## Cryptography Notice
 
@@ -52,6 +56,6 @@ The form and manner of this distribution makes it eligible for export under the 
 
 ## License
 
-Copyright 2014-2019 Open Whisper Systems
+Copyright 2013–2021 Signal, a 501c3 nonprofit
 
-Licensed under the GPLv3: http://www.gnu.org/licenses/gpl-3.0.html
+Licensed under the AGPLv3: https://opensource.org/licenses/agpl-3.0

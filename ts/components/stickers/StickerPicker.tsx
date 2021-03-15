@@ -1,7 +1,9 @@
-/* tslint:disable:max-func-body-length */
-/* tslint:disable:cyclomatic-complexity */
+// Copyright 2019-2020 Signal Messenger, LLC
+// SPDX-License-Identifier: AGPL-3.0-only
+
 import * as React from 'react';
 import classNames from 'classnames';
+import { useRestoreFocus } from '../../util/hooks';
 import { StickerPackType, StickerType } from '../../state/ducks/stickers';
 import { LocalizerType } from '../../types/Util';
 
@@ -24,7 +26,7 @@ function useTabs<T>(tabs: ReadonlyArray<T>, initialTab = tabs[0]) {
       tabs.map(t => () => {
         setTab(t);
       }),
-    tabs
+    [tabs]
   );
 
   return [tab, handlers] as [T, ReadonlyArray<() => void>];
@@ -42,7 +44,7 @@ function getPacksPageOffset(page: number, packs: number): number {
   if (isLastPacksPage(page, packs)) {
     return (
       PACK_PAGE_WIDTH * (Math.floor(packs / PACKS_PAGE_SIZE) - 1) +
-      (packs % PACKS_PAGE_SIZE - 1) * PACK_ICON_WIDTH
+      ((packs % PACKS_PAGE_SIZE) - 1) * PACK_ICON_WIDTH
     );
   }
 
@@ -68,55 +70,64 @@ export const StickerPicker = React.memo(
       }: Props,
       ref
     ) => {
+      const focusRef = React.useRef<HTMLButtonElement>(null);
       const tabIds = React.useMemo(
         () => ['recents', ...packs.map(({ id }) => id)],
-        packs
+        [packs]
       );
       const [currentTab, [recentsHandler, ...packsHandlers]] = useTabs(
         tabIds,
-        // If there are no recent stickers, default to the first sticker pack, unless there are no sticker packs.
+        // If there are no recent stickers,
+        // default to the first sticker pack,
+        // unless there are no sticker packs.
         tabIds[recentStickers.length > 0 ? 0 : Math.min(1, tabIds.length)]
       );
       const selectedPack = packs.find(({ id }) => id === currentTab);
       const {
         stickers = recentStickers,
         title: packTitle = 'Recent Stickers',
-      } =
-        selectedPack || {};
+      } = selectedPack || {};
 
+      const [isUsingKeyboard, setIsUsingKeyboard] = React.useState(false);
       const [packsPage, setPacksPage] = React.useState(0);
-      const onClickPrevPackPage = React.useCallback(
-        () => {
-          setPacksPage(i => i - 1);
-        },
-        [setPacksPage]
-      );
-      const onClickNextPackPage = React.useCallback(
-        () => {
-          setPacksPage(i => i + 1);
-        },
-        [setPacksPage]
-      );
+      const onClickPrevPackPage = React.useCallback(() => {
+        setPacksPage(i => i - 1);
+      }, [setPacksPage]);
+      const onClickNextPackPage = React.useCallback(() => {
+        setPacksPage(i => i + 1);
+      }, [setPacksPage]);
 
       // Handle escape key
-      React.useEffect(
-        () => {
-          const handler = (e: KeyboardEvent) => {
-            if (e.key === 'Escape') {
-              onClose();
-            }
-          };
+      React.useEffect(() => {
+        const handler = (event: KeyboardEvent) => {
+          if (event.key === 'Tab') {
+            // We do NOT prevent default here to allow Tab to be used normally
 
-          document.addEventListener('keyup', handler);
+            setIsUsingKeyboard(true);
 
-          return () => {
-            document.removeEventListener('keyup', handler);
-          };
-        },
-        [onClose]
-      );
+            return;
+          }
+
+          if (event.key === 'Escape') {
+            event.stopPropagation();
+            event.preventDefault();
+
+            onClose();
+          }
+        };
+
+        document.addEventListener('keydown', handler);
+
+        return () => {
+          document.removeEventListener('keydown', handler);
+        };
+      }, [onClose]);
+
+      // Focus popup on after initial render, restore focus on teardown
+      useRestoreFocus(focusRef);
 
       const isEmpty = stickers.length === 0;
+      const addPackRef = isEmpty ? focusRef : undefined;
       const downloadError =
         selectedPack &&
         selectedPack.status === 'error' &&
@@ -150,6 +161,7 @@ export const StickerPicker = React.memo(
               >
                 {hasPacks ? (
                   <button
+                    type="button"
                     onClick={recentsHandler}
                     className={classNames({
                       'module-sticker-picker__header__button': true,
@@ -157,10 +169,12 @@ export const StickerPicker = React.memo(
                       'module-sticker-picker__header__button--selected':
                         currentTab === 'recents',
                     })}
+                    aria-label={i18n('stickers--StickerPicker--Recents')}
                   />
                 ) : null}
                 {packs.map((pack, i) => (
                   <button
+                    type="button"
                     key={pack.id}
                     onClick={packsHandlers[i]}
                     className={classNames(
@@ -186,26 +200,32 @@ export const StickerPicker = React.memo(
                   </button>
                 ))}
               </div>
-              {packsPage > 0 ? (
+              {!isUsingKeyboard && packsPage > 0 ? (
                 <button
+                  type="button"
                   className={classNames(
                     'module-sticker-picker__header__button',
                     'module-sticker-picker__header__button--prev-page'
                   )}
                   onClick={onClickPrevPackPage}
+                  aria-label={i18n('stickers--StickerPicker--PrevPage')}
                 />
               ) : null}
-              {!isLastPacksPage(packsPage, packs.length) ? (
+              {!isUsingKeyboard && !isLastPacksPage(packsPage, packs.length) ? (
                 <button
+                  type="button"
                   className={classNames(
                     'module-sticker-picker__header__button',
                     'module-sticker-picker__header__button--next-page'
                   )}
                   onClick={onClickNextPackPage}
+                  aria-label={i18n('stickers--StickerPicker--NextPage')}
                 />
               ) : null}
             </div>
             <button
+              type="button"
+              ref={addPackRef}
               className={classNames(
                 'module-sticker-picker__header__button',
                 'module-sticker-picker__header__button--add-pack',
@@ -214,6 +234,7 @@ export const StickerPicker = React.memo(
                 }
               )}
               onClick={onClickAddPack}
+              aria-label={i18n('stickers--StickerPicker--AddPack')}
             />
           </div>
           <div
@@ -274,23 +295,30 @@ export const StickerPicker = React.memo(
                   'module-sticker-picker__body__content--under-long-text': showLongText,
                 })}
               >
-                {stickers.map(({ packId, id, url }) => (
-                  <button
-                    key={`${packId}-${id}`}
-                    className="module-sticker-picker__body__cell"
-                    onClick={() => onPickSticker(packId, id)}
-                  >
-                    <img
-                      className="module-sticker-picker__body__cell__image"
-                      src={url}
-                      alt={packTitle}
-                    />
-                  </button>
-                ))}
+                {stickers.map(({ packId, id, url }, index: number) => {
+                  const maybeFocusRef = index === 0 ? focusRef : undefined;
+
+                  return (
+                    <button
+                      type="button"
+                      ref={maybeFocusRef}
+                      key={`${packId}-${id}`}
+                      className="module-sticker-picker__body__cell"
+                      onClick={() => onPickSticker(packId, id)}
+                    >
+                      <img
+                        className="module-sticker-picker__body__cell__image"
+                        src={url}
+                        alt={packTitle}
+                      />
+                    </button>
+                  );
+                })}
                 {Array(pendingCount)
                   .fill(0)
                   .map((_, i) => (
                     <div
+                      // eslint-disable-next-line react/no-array-index-key
                       key={i}
                       className="module-sticker-picker__body__cell__placeholder"
                       role="presentation"

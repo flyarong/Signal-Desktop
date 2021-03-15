@@ -1,9 +1,10 @@
+// Copyright 2017-2020 Signal Messenger, LLC
+// SPDX-License-Identifier: AGPL-3.0-only
+
 /* global Whisper, storage, getAccountManager */
 
 // eslint-disable-next-line func-names
-(function() {
-  'use strict';
-
+(function () {
   window.Whisper = window.Whisper || {};
   const ROTATION_INTERVAL = 48 * 60 * 60 * 1000;
   let timeout;
@@ -27,9 +28,9 @@
       setTimeoutForNextRun();
     } catch (error) {
       window.log.error(
-        'rotateSignedPrekey() failed. Trying again in five seconds'
+        'rotateSignedPrekey() failed. Trying again in five minutes'
       );
-      setTimeout(setTimeoutForNextRun, 5000);
+      setTimeout(setTimeoutForNextRun, 5 * 60 * 1000);
     }
   }
 
@@ -70,7 +71,7 @@
   Whisper.RotateSignedPreKeyListener = {
     init(events, newVersion) {
       if (initComplete) {
-        window.log.warn('Rotate signed prekey listener: Already initialized');
+        window.log.info('Rotate signed prekey listener: Already initialized');
         return;
       }
       initComplete = true;
@@ -83,7 +84,7 @@
       }
 
       events.on('timetravel', () => {
-        if (Whisper.Registration.isDone()) {
+        if (window.Signal.Util.Registration.isDone()) {
           setTimeoutForNextRun();
         }
       });

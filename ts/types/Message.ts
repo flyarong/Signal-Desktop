@@ -1,8 +1,18 @@
+// Copyright 2018-2020 Signal Messenger, LLC
+// SPDX-License-Identifier: AGPL-3.0-only
+
+/* eslint-disable camelcase */
+
 import { Attachment } from './Attachment';
 import { ContactType } from './Contact';
 import { IndexableBoolean, IndexablePresence } from './IndexedDB';
 
-export type Message = UserMessage | VerifiedChangeMessage;
+export type Message = (
+  | UserMessage
+  | VerifiedChangeMessage
+  | MessageHistoryUnsyncedMessage
+  | ProfileChangeNotificationMessage
+) & { deletedForEveryone?: boolean };
 export type UserMessage = IncomingMessage | OutgoingMessage;
 
 export type IncomingMessage = Readonly<
@@ -16,7 +26,7 @@ export type IncomingMessage = Readonly<
     // Optional
     body?: string;
     decrypted_at?: number;
-    errors?: Array<any>;
+    errors?: Array<Error>;
     expireTimer?: number;
     messageTimer?: number; // deprecated
     isViewOnce?: number;
@@ -60,6 +70,22 @@ export type OutgoingMessage = Readonly<
 export type VerifiedChangeMessage = Readonly<
   {
     type: 'verified-change';
+  } & SharedMessageProperties &
+    MessageSchemaVersion5 &
+    ExpirationTimerUpdate
+>;
+
+export type MessageHistoryUnsyncedMessage = Readonly<
+  {
+    type: 'message-history-unsynced';
+  } & SharedMessageProperties &
+    MessageSchemaVersion5 &
+    ExpirationTimerUpdate
+>;
+
+export type ProfileChangeNotificationMessage = Readonly<
+  {
+    type: 'profile-change';
   } & SharedMessageProperties &
     MessageSchemaVersion5 &
     ExpirationTimerUpdate

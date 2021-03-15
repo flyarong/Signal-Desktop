@@ -1,3 +1,6 @@
+// Copyright 2018-2020 Signal Messenger, LLC
+// SPDX-License-Identifier: AGPL-3.0-only
+
 /* eslint-env node */
 
 const is = require('@sindresorhus/is');
@@ -8,7 +11,9 @@ const { escapeRegExp } = require('lodash');
 
 const APP_ROOT_PATH = path.join(__dirname, '..', '..', '..');
 const PHONE_NUMBER_PATTERN = /\+\d{7,12}(\d{3})/g;
+const UUID_PATTERN = /[0-9A-F]{8}-[0-9A-F]{4}-4[0-9A-F]{3}-[89AB][0-9A-F]{3}-[0-9A-F]{9}([0-9A-F]{3})/gi;
 const GROUP_ID_PATTERN = /(group\()([^)]+)(\))/g;
+const GROUP_V2_ID_PATTERN = /(groupv2\()([^=)]+)(=?=?\))/g;
 const REDACTION_PLACEHOLDER = '[REDACTED]';
 
 //      _redactPath :: Path -> String -> String
@@ -64,17 +69,36 @@ exports.redactPhoneNumbers = text => {
   return text.replace(PHONE_NUMBER_PATTERN, `+${REDACTION_PLACEHOLDER}$1`);
 };
 
+//      redactUuids :: String -> String
+exports.redactUuids = text => {
+  if (!is.string(text)) {
+    throw new TypeError("'text' must be a string");
+  }
+
+  return text.replace(UUID_PATTERN, `${REDACTION_PLACEHOLDER}$1`);
+};
+
 //      redactGroupIds :: String -> String
 exports.redactGroupIds = text => {
   if (!is.string(text)) {
     throw new TypeError("'text' must be a string");
   }
 
-  return text.replace(
-    GROUP_ID_PATTERN,
-    (match, before, id, after) =>
-      `${before}${REDACTION_PLACEHOLDER}${removeNewlines(id).slice(-3)}${after}`
-  );
+  return text
+    .replace(
+      GROUP_ID_PATTERN,
+      (match, before, id, after) =>
+        `${before}${REDACTION_PLACEHOLDER}${removeNewlines(id).slice(
+          -3
+        )}${after}`
+    )
+    .replace(
+      GROUP_V2_ID_PATTERN,
+      (match, before, id, after) =>
+        `${before}${REDACTION_PLACEHOLDER}${removeNewlines(id).slice(
+          -3
+        )}${after}`
+    );
 };
 
 //      redactSensitivePaths :: String -> String
@@ -84,7 +108,8 @@ exports.redactSensitivePaths = exports._redactPath(APP_ROOT_PATH);
 exports.redactAll = compose(
   exports.redactSensitivePaths,
   exports.redactGroupIds,
-  exports.redactPhoneNumbers
+  exports.redactPhoneNumbers,
+  exports.redactUuids
 );
 
 const removeNewlines = text => text.replace(/\r?\n|\r/g, '');

@@ -1,22 +1,29 @@
+// Copyright 2019-2020 Signal Messenger, LLC
+// SPDX-License-Identifier: AGPL-3.0-only
+
 import { omit, reject } from 'lodash';
 
 import { normalize } from '../../types/PhoneNumber';
 import { trigger } from '../../shims/events';
 import { cleanSearchTerm } from '../../util/cleanSearchTerm';
-import {
-  searchConversations as dataSearchConversations,
-  searchMessages as dataSearchMessages,
-  searchMessagesInConversation,
-} from '../../../js/modules/data';
+import dataInterface from '../../sql/Client';
 import { makeLookup } from '../../util/makeLookup';
 
 import {
-  ConversationType,
+  ConversationUnloadedActionType,
+  DBConversationType,
   MessageDeletedActionType,
   MessageType,
   RemoveAllConversationsActionType,
   SelectedConversationChangedActionType,
+  ShowArchivedConversationsActionType,
 } from './conversations';
+
+const {
+  searchConversations: dataSearchConversations,
+  searchMessages: dataSearchMessages,
+  searchMessagesInConversation,
+} = dataInterface;
 
 // State
 
@@ -29,6 +36,7 @@ export type MessageSearchResultLookupType = {
 };
 
 export type SearchStateType = {
+  startSearchCounter: number;
   searchConversationId?: string;
   searchConversationName?: string;
   // We store just ids of conversations, since that data is always cached in memory
@@ -81,6 +89,10 @@ type UpdateSearchTermActionType = {
     query: string;
   };
 };
+type StartSearchActionType = {
+  type: 'SEARCH_START';
+  payload: null;
+};
 type ClearSearchActionType = {
   type: 'SEARCH_CLEAR';
   payload: null;
@@ -97,24 +109,28 @@ type SearchInConversationActionType = {
   };
 };
 
-export type SEARCH_TYPES =
+export type SearchActionType =
   | SearchMessagesResultsKickoffActionType
   | SearchDiscussionsResultsKickoffActionType
   | SearchMessagesResultsFulfilledActionType
   | SearchDiscussionsResultsFulfilledActionType
   | UpdateSearchTermActionType
+  | StartSearchActionType
   | ClearSearchActionType
   | ClearConversationSearchActionType
   | SearchInConversationActionType
   | MessageDeletedActionType
   | RemoveAllConversationsActionType
-  | SelectedConversationChangedActionType;
+  | SelectedConversationChangedActionType
+  | ShowArchivedConversationsActionType
+  | ConversationUnloadedActionType;
 
 // Action Creators
 
 export const actions = {
   searchMessages,
   searchDiscussions,
+  startSearch,
   clearSearch,
   clearConversationSearch,
   searchInConversation,
@@ -137,7 +153,7 @@ function searchMessages(
 function searchDiscussions(
   query: string,
   options: {
-    ourNumber: string;
+    ourConversationId: string;
     noteToSelf: string;
   }
 ): SearchDiscussionsResultsKickoffActionType {
@@ -169,15 +185,15 @@ async function doSearchMessages(
 async function doSearchDiscussions(
   query: string,
   options: {
-    ourNumber: string;
+    ourConversationId: string;
     noteToSelf: string;
   }
 ): Promise<SearchDiscussionsResultsPayloadType> {
-  const { ourNumber, noteToSelf } = options;
+  const { ourConversationId, noteToSelf } = options;
   const { conversations, contacts } = await queryConversationsAndContacts(
     query,
     {
-      ourNumber,
+      ourConversationId,
       noteToSelf,
     }
   );
@@ -188,7 +204,12 @@ async function doSearchDiscussions(
     query,
   };
 }
-
+function startSearch(): StartSearchActionType {
+  return {
+    type: 'SEARCH_START',
+    payload: null,
+  };
+}
 function clearSearch(): ClearSearchActionType {
   return {
     type: 'SEARCH_CLEAR',
@@ -255,12 +276,15 @@ async function queryMessages(query: string, searchConversationId?: string) {
 
 async function queryConversationsAndContacts(
   providedQuery: string,
-  options: { ourNumber: string; noteToSelf: string }
+  options: {
+    ourConversationId: string;
+    noteToSelf: string;
+  }
 ) {
-  const { ourNumber, noteToSelf } = options;
-  const query = providedQuery.replace(/[+-.()]*/g, '');
+  const { ourConversationId, noteToSelf } = options;
+  const query = providedQuery.replace(/[+.()]*/g, '');
 
-  const searchResults: Array<ConversationType> = await dataSearchConversations(
+  const searchResults: Array<DBConversationType> = await dataSearchConversations(
     query
   );
 
@@ -271,20 +295,27 @@ async function queryConversationsAndContacts(
   for (let i = 0; i < max; i += 1) {
     const conversation = searchResults[i];
 
-    if (conversation.type === 'direct' && !Boolean(conversation.lastMessage)) {
+    if (conversation.type === 'private' && !conversation.lastMessage) {
       contacts.push(conversation.id);
     } else {
       conversations.push(conversation.id);
     }
   }
 
+  // // @ts-ignore
+  // console._log(
+  //   '%cqueryConversationsAndContacts',
+  //   'background:black;color:red;',
+  //   { searchResults, conversations, ourNumber, ourUuid }
+  // );
+
   // Inject synthetic Note to Self entry if query matches localized 'Note to Self'
   if (noteToSelf.indexOf(providedQuery.toLowerCase()) !== -1) {
     // ensure that we don't have duplicates in our results
-    contacts = contacts.filter(id => id !== ourNumber);
-    conversations = conversations.filter(id => id !== ourNumber);
+    contacts = contacts.filter(id => id !== ourConversationId);
+    conversations = conversations.filter(id => id !== ourConversationId);
 
-    contacts.unshift(ourNumber);
+    contacts.unshift(ourConversationId);
   }
 
   return { conversations, contacts };
@@ -292,8 +323,9 @@ async function queryConversationsAndContacts(
 
 // Reducer
 
-function getEmptyState(): SearchStateType {
+export function getEmptyState(): SearchStateType {
   return {
+    startSearchCounter: 0,
     query: '',
     messageIds: [],
     messageLookup: {},
@@ -304,11 +336,23 @@ function getEmptyState(): SearchStateType {
   };
 }
 
-// tslint:disable-next-line max-func-body-length
 export function reducer(
-  state: SearchStateType = getEmptyState(),
-  action: SEARCH_TYPES
+  state: Readonly<SearchStateType> = getEmptyState(),
+  action: Readonly<SearchActionType>
 ): SearchStateType {
+  if (action.type === 'SHOW_ARCHIVED_CONVERSATIONS') {
+    return getEmptyState();
+  }
+
+  if (action.type === 'SEARCH_START') {
+    return {
+      ...state,
+      searchConversationId: undefined,
+      searchConversationName: undefined,
+      startSearchCounter: state.startSearchCounter + 1,
+    };
+  }
+
   if (action.type === 'SEARCH_CLEAR') {
     return getEmptyState();
   }
@@ -341,13 +385,17 @@ export function reducer(
     const { searchConversationId, searchConversationName } = payload;
 
     if (searchConversationId === state.searchConversationId) {
-      return state;
+      return {
+        ...state,
+        startSearchCounter: state.startSearchCounter + 1,
+      };
     }
 
     return {
       ...getEmptyState(),
       searchConversationId,
       searchConversationName,
+      startSearchCounter: state.startSearchCounter + 1,
     };
   }
   if (action.type === 'CLEAR_CONVERSATION_SEARCH') {
@@ -410,6 +458,18 @@ export function reducer(
       ...state,
       selectedMessage: messageId,
     };
+  }
+
+  if (action.type === 'CONVERSATION_UNLOADED') {
+    const { payload } = action;
+    const { id } = payload;
+    const { searchConversationId } = state;
+
+    if (searchConversationId && searchConversationId === id) {
+      return getEmptyState();
+    }
+
+    return state;
   }
 
   if (action.type === 'MESSAGE_DELETED') {

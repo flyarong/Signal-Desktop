@@ -1,10 +1,11 @@
+// Copyright 2018-2021 Signal Messenger, LLC
+// SPDX-License-Identifier: AGPL-3.0-only
+
 import is from '@sindresorhus/is';
 import moment from 'moment';
 import { isNumber, padStart } from 'lodash';
 
 import * as MIME from './MIME';
-import { arrayBufferToObjectURL } from '../util/arrayBufferToObjectURL';
-import { saveURLAsFile } from '../util/saveURLAsFile';
 import { SignalService } from '../protobuf';
 import {
   isImageTypeSupported,
@@ -19,7 +20,8 @@ const MIN_HEIGHT = 50;
 
 // Used for display
 
-export interface AttachmentType {
+export type AttachmentType = {
+  blurHash?: string;
   caption?: string;
   contentType: MIME.MIMEType;
   fileName: string;
@@ -32,6 +34,7 @@ export interface AttachmentType {
   pending?: boolean;
   width?: number;
   height?: number;
+  path?: string;
   screenshot?: {
     height: number;
     width: number;
@@ -44,8 +47,9 @@ export interface AttachmentType {
     width: number;
     url: string;
     contentType: MIME.MIMEType;
+    path: string;
   };
-}
+};
 
 // UI-focused functions
 
@@ -65,7 +69,7 @@ export function getExtensionForDisplay({
   }
 
   if (!contentType) {
-    return;
+    return undefined;
   }
 
   const slash = contentType.indexOf('/');
@@ -73,10 +77,12 @@ export function getExtensionForDisplay({
     return contentType.slice(slash + 1);
   }
 
-  return;
+  return undefined;
 }
 
-export function isAudio(attachments?: Array<AttachmentType>) {
+export function isAudio(
+  attachments?: Array<AttachmentType>
+): boolean | undefined {
   return (
     attachments &&
     attachments[0] &&
@@ -85,7 +91,9 @@ export function isAudio(attachments?: Array<AttachmentType>) {
   );
 }
 
-export function canDisplayImage(attachments?: Array<AttachmentType>) {
+export function canDisplayImage(
+  attachments?: Array<AttachmentType>
+): boolean | 0 | undefined {
   const { height, width } =
     attachments && attachments[0] ? attachments[0] : { height: 0, width: 0 };
 
@@ -99,7 +107,7 @@ export function canDisplayImage(attachments?: Array<AttachmentType>) {
   );
 }
 
-export function getThumbnailUrl(attachment: AttachmentType) {
+export function getThumbnailUrl(attachment: AttachmentType): string {
   if (attachment.thumbnail) {
     return attachment.thumbnail.url;
   }
@@ -107,7 +115,7 @@ export function getThumbnailUrl(attachment: AttachmentType) {
   return getUrl(attachment);
 }
 
-export function getUrl(attachment: AttachmentType) {
+export function getUrl(attachment: AttachmentType): string {
   if (attachment.screenshot) {
     return attachment.screenshot.url;
   }
@@ -115,7 +123,9 @@ export function getUrl(attachment: AttachmentType) {
   return attachment.url;
 }
 
-export function isImage(attachments?: Array<AttachmentType>) {
+export function isImage(
+  attachments?: Array<AttachmentType>
+): boolean | undefined {
   return (
     attachments &&
     attachments[0] &&
@@ -124,26 +134,34 @@ export function isImage(attachments?: Array<AttachmentType>) {
   );
 }
 
-export function isImageAttachment(attachment: AttachmentType) {
-  return (
+export function isImageAttachment(
+  attachment?: AttachmentType
+): attachment is AttachmentType {
+  return Boolean(
     attachment &&
-    attachment.contentType &&
-    isImageTypeSupported(attachment.contentType)
+      attachment.contentType &&
+      isImageTypeSupported(attachment.contentType)
   );
 }
-export function hasImage(attachments?: Array<AttachmentType>) {
+export function hasImage(
+  attachments?: Array<AttachmentType>
+): string | boolean | undefined {
   return (
     attachments &&
     attachments[0] &&
-    (attachments[0].url || attachments[0].pending)
+    (attachments[0].url || attachments[0].pending || attachments[0].blurHash)
   );
 }
 
-export function isVideo(attachments?: Array<AttachmentType>) {
+export function isVideo(
+  attachments?: Array<AttachmentType>
+): boolean | undefined {
   return attachments && isVideoAttachment(attachments[0]);
 }
 
-export function isVideoAttachment(attachment?: AttachmentType) {
+export function isVideoAttachment(
+  attachment?: AttachmentType
+): boolean | undefined {
   return (
     attachment &&
     attachment.contentType &&
@@ -151,7 +169,19 @@ export function isVideoAttachment(attachment?: AttachmentType) {
   );
 }
 
-export function hasVideoScreenshot(attachments?: Array<AttachmentType>) {
+export function hasNotDownloaded(attachment?: AttachmentType): boolean {
+  return Boolean(attachment && !attachment.url);
+}
+
+export function hasVideoBlurHash(attachments?: Array<AttachmentType>): boolean {
+  const firstAttachment = attachments ? attachments[0] : null;
+
+  return Boolean(firstAttachment && firstAttachment.blurHash);
+}
+
+export function hasVideoScreenshot(
+  attachments?: Array<AttachmentType>
+): string | null | undefined {
   const firstAttachment = attachments ? attachments[0] : null;
 
   return (
@@ -166,7 +196,10 @@ type DimensionsType = {
   width: number;
 };
 
-export function getImageDimensions(attachment: AttachmentType): DimensionsType {
+export function getImageDimensions(
+  attachment: AttachmentType,
+  forcedWidth?: number
+): DimensionsType {
   const { height, width } = attachment;
   if (!height || !width) {
     return {
@@ -176,7 +209,8 @@ export function getImageDimensions(attachment: AttachmentType): DimensionsType {
   }
 
   const aspectRatio = height / width;
-  const targetWidth = Math.max(Math.min(MAX_WIDTH, width), MIN_WIDTH);
+  const targetWidth =
+    forcedWidth || Math.max(Math.min(MAX_WIDTH, width), MIN_WIDTH);
   const candidateHeight = Math.round(targetWidth * aspectRatio);
 
   return {
@@ -266,9 +300,9 @@ export type Attachment = {
   // digest?: ArrayBuffer;
 } & Partial<AttachmentSchemaVersion3>;
 
-interface AttachmentSchemaVersion3 {
+type AttachmentSchemaVersion3 = {
   path: string;
-}
+};
 
 export const isVisualMedia = (attachment: Attachment): boolean => {
   const { contentType } = attachment;
@@ -305,7 +339,7 @@ export const isFile = (attachment: Attachment): boolean => {
 export const isVoiceMessage = (attachment: Attachment): boolean => {
   const flag = SignalService.AttachmentPointer.Flags.VOICE_MESSAGE;
   const hasFlag =
-    // tslint:disable-next-line no-bitwise
+    // eslint-disable-next-line no-bitwise
     !is.undefined(attachment.flags) && (attachment.flags & flag) === flag;
   if (hasFlag) {
     return true;
@@ -322,31 +356,41 @@ export const isVoiceMessage = (attachment: Attachment): boolean => {
   return false;
 };
 
-export const save = ({
+export const save = async ({
   attachment,
-  document,
   index,
-  getAbsolutePath,
+  readAttachmentData,
+  saveAttachmentToDisk,
   timestamp,
 }: {
   attachment: Attachment;
-  document: Document;
   index: number;
-  getAbsolutePath: (relativePath: string) => string;
+  readAttachmentData: (relativePath: string) => Promise<ArrayBuffer>;
+  saveAttachmentToDisk: (options: {
+    data: ArrayBuffer;
+    name: string;
+  }) => Promise<{ name: string; fullPath: string }>;
   timestamp?: number;
-}): void => {
-  const isObjectURLRequired = is.undefined(attachment.path);
-  const url = !is.undefined(attachment.path)
-    ? getAbsolutePath(attachment.path)
-    : arrayBufferToObjectURL({
-        data: attachment.data,
-        type: MIME.APPLICATION_OCTET_STREAM,
-      });
-  const filename = getSuggestedFilename({ attachment, timestamp, index });
-  saveURLAsFile({ url, filename, document });
-  if (isObjectURLRequired) {
-    URL.revokeObjectURL(url);
+}): Promise<string | null> => {
+  if (!attachment.path && !attachment.data) {
+    throw new Error('Attachment had neither path nor data');
   }
+
+  const data = attachment.path
+    ? await readAttachmentData(attachment.path)
+    : attachment.data;
+  const name = getSuggestedFilename({ attachment, timestamp, index });
+
+  const result = await saveAttachmentToDisk({
+    data,
+    name,
+  });
+
+  if (!result) {
+    return null;
+  }
+
+  return result.fullPath;
 };
 
 export const getSuggestedFilename = ({
@@ -362,7 +406,7 @@ export const getSuggestedFilename = ({
     return attachment.fileName;
   }
 
-  const prefix = 'signal-attachment';
+  const prefix = 'signal';
   const suffix = timestamp
     ? moment(timestamp).format('-YYYY-MM-DD-HHmmss')
     : '';
@@ -377,7 +421,7 @@ export const getFileExtension = (
   attachment: Attachment
 ): string | undefined => {
   if (!attachment.contentType) {
-    return;
+    return undefined;
   }
 
   switch (attachment.contentType) {
@@ -386,4 +430,14 @@ export const getFileExtension = (
     default:
       return attachment.contentType.split('/')[1];
   }
+};
+
+export const getUploadSizeLimitKb = (contentType: MIME.MIMEType): number => {
+  if (MIME.isGif(contentType)) {
+    return 25000;
+  }
+  if (isImageTypeSupported(contentType)) {
+    return 6000;
+  }
+  return 100000;
 };

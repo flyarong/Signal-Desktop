@@ -1,6 +1,9 @@
+// Copyright 2019-2020 Signal Messenger, LLC
+// SPDX-License-Identifier: AGPL-3.0-only
+
 import memoizee from 'memoizee';
 import { createSelector } from 'reselect';
-import { getSearchResultsProps } from '../../shims/Whisper';
+import { instance } from '../../util/libphonenumberInstance';
 
 import { StateType } from '../reducer';
 
@@ -20,7 +23,8 @@ import {
 } from '../../components/SearchResults';
 import { PropsDataType as MessageSearchResultPropsDataType } from '../../components/MessageSearchResult';
 
-import { getRegionCode, getUserNumber } from './user';
+import { getRegionCode, getUserConversationId } from './user';
+import { getUserAgent } from './items';
 import {
   GetConversationByIdType,
   getConversationLookup,
@@ -50,6 +54,11 @@ export const getSearchConversationName = createSelector(
   (state: SearchStateType): string | undefined => state.searchConversationName
 );
 
+export const getStartSearchCounter = createSelector(
+  getSearch,
+  (state: SearchStateType): number => state.startSearchCounter
+);
+
 export const isSearching = createSelector(
   getSearch,
   (state: SearchStateType) => {
@@ -64,13 +73,21 @@ export const getMessageSearchResultLookup = createSelector(
   (state: SearchStateType) => state.messageLookup
 );
 export const getSearchResults = createSelector(
-  [getSearch, getRegionCode, getConversationLookup, getSelectedConversation],
+  [
+    getSearch,
+    getRegionCode,
+    getUserAgent,
+    getConversationLookup,
+    getSelectedConversation,
+    getSelectedMessage,
+  ],
   (
     state: SearchStateType,
     regionCode: string,
+    userAgent: string,
     lookup: ConversationLookupType,
-    selectedConversation?: string
-    // tslint:disable-next-line max-func-body-length
+    selectedConversationId?: string,
+    selectedMessageId?: string
   ): SearchResultsPropsType | undefined => {
     const {
       contacts,
@@ -102,6 +119,23 @@ export const getSearchResults = createSelector(
         type: 'start-new-conversation',
         data: undefined,
       });
+
+      const isIOS = userAgent === 'OWI';
+      let isValidNumber = false;
+      try {
+        // Sometimes parse() throws, like for invalid country codes
+        const parsedNumber = instance.parse(state.query, regionCode);
+        isValidNumber = instance.isValidNumber(parsedNumber);
+      } catch (_) {
+        // no-op
+      }
+
+      if (!isIOS && isValidNumber) {
+        items.push({
+          type: 'sms-mms-not-supported-text',
+          data: undefined,
+        });
+      }
     }
 
     if (haveConversations) {
@@ -115,7 +149,7 @@ export const getSearchResults = createSelector(
           type: 'conversation',
           data: {
             ...data,
-            isSelected: Boolean(data && id === selectedConversation),
+            isSelected: Boolean(data && id === selectedConversationId),
           },
         });
       });
@@ -137,11 +171,12 @@ export const getSearchResults = createSelector(
       });
       contacts.forEach(id => {
         const data = lookup[id];
+
         items.push({
           type: 'contact',
           data: {
             ...data,
-            isSelected: Boolean(data && id === selectedConversation),
+            isSelected: Boolean(data && id === selectedConversationId),
           },
         });
       });
@@ -174,31 +209,32 @@ export const getSearchResults = createSelector(
       items,
       messagesLoading,
       noResults,
-      regionCode: regionCode,
+      regionCode,
       searchConversationName,
       searchTerm: state.query,
+      selectedConversationId,
+      selectedMessageId,
     };
   }
 );
 
 export function _messageSearchResultSelector(
   message: MessageSearchResultType,
-  // @ts-ignore
-  ourNumber: string,
-  // @ts-ignore
-  regionCode: string,
-  // @ts-ignore
-  sender?: ConversationType,
-  // @ts-ignore
-  recipient?: ConversationType,
+  from: ConversationType,
+  to: ConversationType,
   searchConversationId?: string,
   selectedMessageId?: string
 ): MessageSearchResultPropsDataType {
-  // Note: We don't use all of those parameters here, but the shim we call does.
-  //   We want to call this function again if any of those parameters change.
   return {
-    ...getSearchResultsProps(message),
-    isSelected: message.id === selectedMessageId,
+    from,
+    to,
+
+    id: message.id,
+    conversationId: message.conversationId,
+    sentAt: message.sent_at,
+    snippet: message.snippet,
+
+    isSelected: Boolean(selectedMessageId && message.id === selectedMessageId),
     isSearchingInConversation: Boolean(searchConversationId),
   };
 }
@@ -207,16 +243,13 @@ export function _messageSearchResultSelector(
 //   changes: regionCode and userNumber.
 type CachedMessageSearchResultSelectorType = (
   message: MessageSearchResultType,
-  ourNumber: string,
-  regionCode: string,
-  sender?: ConversationType,
-  recipient?: ConversationType,
+  from: ConversationType,
+  to: ConversationType,
   searchConversationId?: string,
   selectedMessageId?: string
 ) => MessageSearchResultPropsDataType;
 export const getCachedSelectorForMessageSearchResult = createSelector(
-  getRegionCode,
-  getUserNumber,
+  getUserConversationId,
   (): CachedMessageSearchResultSelectorType => {
     // Note: memoizee will check all parameters provided, and only run our selector
     //   if any of them have changed.
@@ -233,43 +266,47 @@ export const getMessageSearchResultSelector = createSelector(
   getSelectedMessage,
   getConversationSelector,
   getSearchConversationId,
-  getRegionCode,
-  getUserNumber,
+  getUserConversationId,
   (
     messageSearchResultSelector: CachedMessageSearchResultSelectorType,
     messageSearchResultLookup: MessageSearchResultLookupType,
-    selectedMessage: string | undefined,
+    selectedMessageId: string | undefined,
     conversationSelector: GetConversationByIdType,
     searchConversationId: string | undefined,
-    regionCode: string,
-    ourNumber: string
+    ourConversationId: string
   ): GetMessageSearchResultByIdType => {
     return (id: string) => {
       const message = messageSearchResultLookup[id];
       if (!message) {
-        return;
+        window.log.warn(
+          `getMessageSearchResultSelector: messageSearchResultLookup was missing id ${id}`
+        );
+        return undefined;
       }
 
-      const { conversationId, source, type } = message;
-      let sender: ConversationType | undefined;
-      let recipient: ConversationType | undefined;
+      const { conversationId, source, sourceUuid, type } = message;
+      let from: ConversationType;
+      let to: ConversationType;
 
       if (type === 'incoming') {
-        sender = conversationSelector(source);
-        recipient = conversationSelector(ourNumber);
+        from = conversationSelector(sourceUuid || source);
+        to = conversationSelector(conversationId);
       } else if (type === 'outgoing') {
-        sender = conversationSelector(ourNumber);
-        recipient = conversationSelector(conversationId);
+        from = conversationSelector(ourConversationId);
+        to = conversationSelector(conversationId);
+      } else {
+        window.log.warn(
+          `getMessageSearchResultSelector: Got unexpected type ${type}`
+        );
+        return undefined;
       }
 
       return messageSearchResultSelector(
         message,
-        ourNumber,
-        regionCode,
-        sender,
-        recipient,
+        from,
+        to,
         searchConversationId,
-        selectedMessage
+        selectedMessageId
       );
     };
   }

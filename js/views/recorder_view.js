@@ -1,11 +1,12 @@
+// Copyright 2016-2020 Signal Messenger, LLC
+// SPDX-License-Identifier: AGPL-3.0-only
+
 /* global $, Whisper, moment, WebAudioRecorder */
 
 /* eslint-disable more/no-then */
 
 // eslint-disable-next-line func-names
-(function() {
-  'use strict';
-
+(function () {
   window.Whisper = window.Whisper || {};
 
   Whisper.RecorderView = Whisper.View.extend({
@@ -18,6 +19,9 @@
       this.onSwitchAwayBound = this.onSwitchAway.bind(this);
       $(window).on('blur', this.onSwitchAwayBound);
 
+      this.handleKeyDownBound = this.handleKeyDown.bind(this);
+      this.$el.on('keydown', this.handleKeyDownBound);
+
       this.start();
     },
     events: {
@@ -26,7 +30,17 @@
       close: 'close',
     },
     onSwitchAway() {
+      this.lostFocus = true;
+      this.recorder.finishRecording();
       this.close();
+    },
+    handleKeyDown(event) {
+      if (event.key === 'Escape') {
+        this.close();
+
+        event.preventDefault();
+        event.stopPropagation();
+      }
     },
     updateTime() {
       const duration = moment.duration(Date.now() - this.startTime, 'ms');
@@ -67,6 +81,8 @@
       this.trigger('closed');
 
       $(window).off('blur', this.onSwitchAwayBound);
+
+      this.$el.off('keydown', this.handleKeyDownBound);
     },
     finish() {
       this.clickedFinish = true;
@@ -76,11 +92,14 @@
     handleBlob(recorder, blob) {
       if (blob && this.clickedFinish) {
         this.trigger('send', blob);
+      } else if (blob) {
+        this.trigger('confirm', blob, this.lostFocus);
       } else {
         this.close();
       }
     },
     start() {
+      this.lostFocus = false;
       this.clickedFinish = false;
       this.context = new AudioContext();
       this.input = this.context.createGain();
@@ -90,6 +109,7 @@
       });
       this.recorder.onComplete = this.handleBlob.bind(this);
       this.recorder.onError = this.onError.bind(this);
+      this.recorder.onTimeout = this.onTimeout.bind(this);
       navigator.webkitGetUserMedia(
         { audio: true },
         stream => {
@@ -99,6 +119,10 @@
         this.onError.bind(this)
       );
       this.recorder.startRecording();
+    },
+    onTimeout() {
+      this.recorder.finishRecording();
+      this.close();
     },
     onError(error) {
       // Protect against out-of-band errors, which can happen if the user revokes media

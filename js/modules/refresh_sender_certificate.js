@@ -1,3 +1,6 @@
+// Copyright 2018-2020 Signal Messenger, LLC
+// SPDX-License-Identifier: AGPL-3.0-only
+
 /* global window, setTimeout, clearTimeout, textsecure, WebAPI, ConversationController */
 
 module.exports = {
@@ -14,8 +17,9 @@ let scheduleNext = null;
 // We need to refresh our own profile regularly to account for newly-added devices which
 //   do not support unidentified delivery.
 function refreshOurProfile() {
-  const ourNumber = textsecure.storage.user.getNumber();
-  const conversation = ConversationController.getOrCreate(ourNumber, 'private');
+  window.log.info('refreshOurProfile');
+  const ourId = ConversationController.getOurConversationId();
+  const conversation = ConversationController.get(ourId);
   conversation.getProfiles();
 }
 
@@ -34,50 +38,99 @@ function initialize({ events, storage, navigator, logger }) {
   function scheduleNextRotation() {
     const now = Date.now();
     const certificate = storage.get('senderCertificate');
-    if (!certificate) {
-      setTimeoutForNextRun(now);
+    if (!certificate || !certificate.expires) {
+      setTimeoutForNextRun(scheduledTime || now);
 
       return;
     }
 
-    // The useful information in a SenderCertificate is all serialized, so we
-    //   need to do another layer of decoding.
-    const decoded = textsecure.protobuf.SenderCertificate.Certificate.decode(
-      certificate.certificate
+    // If we have a time in place and it's already before the safety zone before expire,
+    //   we keep it
+    if (
+      scheduledTime &&
+      scheduledTime <= certificate.expires - MINIMUM_TIME_LEFT
+    ) {
+      setTimeoutForNextRun(scheduledTime);
+      return;
+    }
+
+    // Otherwise, we reset every day, or earlier if the safety zone requires it
+    const time = Math.min(
+      now + ONE_DAY,
+      certificate.expires - MINIMUM_TIME_LEFT
     );
-    const expires = decoded.expires.toNumber();
-
-    const time = Math.min(now + ONE_DAY, expires - MINIMUM_TIME_LEFT);
-
     setTimeoutForNextRun(time);
   }
 
   // Keeping this entrypoint around so more inialize() calls just kick the timing
   scheduleNext = scheduleNextRotation;
 
+  async function saveCert({ certificate, key }) {
+    const arrayBuffer = window.Signal.Crypto.base64ToArrayBuffer(certificate);
+    const decodedContainer = textsecure.protobuf.SenderCertificate.decode(
+      arrayBuffer
+    );
+    const decodedCert = textsecure.protobuf.SenderCertificate.Certificate.decode(
+      decodedContainer.certificate
+    );
+
+    // We don't want to send a protobuf-generated object across IPC, so we make
+    //   our own object.
+    const toSave = {
+      expires: decodedCert.expires.toNumber(),
+      serialized: arrayBuffer,
+    };
+    await storage.put(key, toSave);
+  }
+
+  async function removeOldKey() {
+    const oldCertKey = 'senderCertificateWithUuid';
+    const oldUuidCert = storage.get(oldCertKey);
+    if (oldUuidCert) {
+      await storage.remove(oldCertKey);
+    }
+  }
+
   async function run() {
     logger.info('refreshSenderCertificate: Getting new certificate...');
     try {
-      const username = storage.get('number_id');
-      const password = storage.get('password');
-      const server = WebAPI.connect({ username, password });
+      const OLD_USERNAME = storage.get('number_id');
+      const USERNAME = storage.get('uuid_id');
+      const PASSWORD = storage.get('password');
+      const server = WebAPI.connect({
+        username: USERNAME || OLD_USERNAME,
+        password: PASSWORD,
+      });
 
-      const { certificate } = await server.getSenderCertificate();
-      const arrayBuffer = window.Signal.Crypto.base64ToArrayBuffer(certificate);
-      const decoded = textsecure.protobuf.SenderCertificate.decode(arrayBuffer);
+      const omitE164 = true;
+      const [
+        { certificate },
+        { certificate: certificateWithNoE164 },
+      ] = await Promise.all([
+        server.getSenderCertificate(),
+        server.getSenderCertificate(omitE164),
+      ]);
 
-      decoded.certificate = decoded.certificate.toArrayBuffer();
-      decoded.signature = decoded.signature.toArrayBuffer();
-      decoded.serialized = arrayBuffer;
+      await Promise.all([
+        saveCert({ certificate, key: 'senderCertificate' }),
+        saveCert({
+          certificate: certificateWithNoE164,
+          key: 'senderCertificateNoE164',
+        }),
+        removeOldKey(),
+      ]);
 
-      storage.put('senderCertificate', decoded);
+      scheduledTime = null;
       scheduleNextRotation();
     } catch (error) {
       logger.error(
-        'refreshSenderCertificate: Get failed. Trying again in two minutes...',
+        'refreshSenderCertificate: Get failed. Trying again in five minutes...',
         error && error.stack ? error.stack : error
       );
-      setTimeout(runWhenOnline, 2 * 60 * 1000);
+
+      scheduledTime = Date.now() + 5 * 60 * 1000;
+
+      scheduleNextRotation();
     }
 
     refreshOurProfile();

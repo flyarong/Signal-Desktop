@@ -1,11 +1,12 @@
+// Copyright 2017-2020 Signal Messenger, LLC
+// SPDX-License-Identifier: AGPL-3.0-only
+
 /* global Whisper, SignalProtocolStore, ConversationController, _ */
 
 /* eslint-disable more/no-then */
 
 // eslint-disable-next-line func-names
-(function() {
-  'use strict';
-
+(function () {
   window.Whisper = window.Whisper || {};
 
   Whisper.KeyChangeListener = {
@@ -14,16 +15,18 @@
         throw new Error('KeyChangeListener requires a SignalProtocolStore');
       }
 
-      signalProtocolStore.on('keychange', async id => {
+      signalProtocolStore.on('keychange', async identifier => {
         const conversation = await ConversationController.getOrCreateAndWait(
-          id,
+          identifier,
           'private'
         );
-        conversation.addKeyChange(id);
+        conversation.addKeyChange(identifier);
 
-        const groups = await ConversationController.getAllGroupsInvolvingId(id);
+        const groups = await ConversationController.getAllGroupsInvolvingId(
+          conversation.id
+        );
         _.forEach(groups, group => {
-          group.addKeyChange(id);
+          group.addKeyChange(identifier);
         });
       });
     },

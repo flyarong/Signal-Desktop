@@ -1,4 +1,5 @@
-/* global ContactBuffer, GroupBuffer, textsecure */
+// Copyright 2015-2020 Signal Messenger, LLC
+// SPDX-License-Identifier: AGPL-3.0-only
 
 describe('ContactBuffer', () => {
   function getTestBuffer() {
@@ -10,9 +11,10 @@ describe('ContactBuffer', () => {
     }
     avatarBuffer.limit = avatarBuffer.offset;
     avatarBuffer.offset = 0;
-    const contactInfo = new textsecure.protobuf.ContactDetails({
+    const contactInfo = new window.textsecure.protobuf.ContactDetails({
       name: 'Zero Cool',
       number: '+10000000000',
+      uuid: '7198E1BD-1293-452A-A098-F982FF201902',
       avatar: { contentType: 'image/jpeg', length: avatarLen },
     });
     const contactInfoBuffer = contactInfo.encode().toArrayBuffer();
@@ -30,13 +32,14 @@ describe('ContactBuffer', () => {
 
   it('parses an array buffer of contacts', () => {
     const arrayBuffer = getTestBuffer();
-    const contactBuffer = new ContactBuffer(arrayBuffer);
+    const contactBuffer = new window.textsecure.ContactBuffer(arrayBuffer);
     let contact = contactBuffer.next();
     let count = 0;
     while (contact !== undefined) {
       count += 1;
       assert.strictEqual(contact.name, 'Zero Cool');
       assert.strictEqual(contact.number, '+10000000000');
+      assert.strictEqual(contact.uuid, '7198e1bd-1293-452a-a098-f982ff201902');
       assert.strictEqual(contact.avatar.contentType, 'image/jpeg');
       assert.strictEqual(contact.avatar.length, 255);
       assert.strictEqual(contact.avatar.data.byteLength, 255);
@@ -60,10 +63,10 @@ describe('GroupBuffer', () => {
     }
     avatarBuffer.limit = avatarBuffer.offset;
     avatarBuffer.offset = 0;
-    const groupInfo = new textsecure.protobuf.GroupDetails({
+    const groupInfo = new window.textsecure.protobuf.GroupDetails({
       id: new Uint8Array([1, 3, 3, 7]).buffer,
       name: 'Hackers',
-      members: ['cereal', 'burn', 'phreak', 'joey'],
+      membersE164: ['cereal', 'burn', 'phreak', 'joey'],
       avatar: { contentType: 'image/jpeg', length: avatarLen },
     });
     const groupInfoBuffer = groupInfo.encode().toArrayBuffer();
@@ -81,7 +84,7 @@ describe('GroupBuffer', () => {
 
   it('parses an array buffer of groups', () => {
     const arrayBuffer = getTestBuffer();
-    const groupBuffer = new GroupBuffer(arrayBuffer);
+    const groupBuffer = new window.textsecure.GroupBuffer(arrayBuffer);
     let group = groupBuffer.next();
     let count = 0;
     while (group !== undefined) {
@@ -91,7 +94,12 @@ describe('GroupBuffer', () => {
         group.id.toArrayBuffer(),
         new Uint8Array([1, 3, 3, 7]).buffer
       );
-      assert.sameMembers(group.members, ['cereal', 'burn', 'phreak', 'joey']);
+      assert.sameMembers(group.membersE164, [
+        'cereal',
+        'burn',
+        'phreak',
+        'joey',
+      ]);
       assert.strictEqual(group.avatar.contentType, 'image/jpeg');
       assert.strictEqual(group.avatar.length, 255);
       assert.strictEqual(group.avatar.data.byteLength, 255);

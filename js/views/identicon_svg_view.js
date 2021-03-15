@@ -1,14 +1,15 @@
+// Copyright 2015-2020 Signal Messenger, LLC
+// SPDX-License-Identifier: AGPL-3.0-only
+
 /* global Whisper, loadImage */
 
 // eslint-disable-next-line func-names
-(function() {
-  'use strict';
-
+(function () {
   window.Whisper = window.Whisper || {};
 
   /*
-    * Render an avatar identicon to an svg for use in a notification.
-    */
+   * Render an avatar identicon to an svg for use in a notification.
+   */
   Whisper.IdenticonSVGView = Whisper.View.extend({
     templateName: 'identicon-svg',
     initialize(options) {
@@ -54,5 +55,6 @@
     light_green: '#1c8260',
     blue_grey: '#895d66',
     grey: '#6b6b78',
+    ultramarine: '#2c6bed',
   };
 })();

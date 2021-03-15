@@ -1,25 +1,33 @@
+// Copyright 2018-2021 Signal Messenger, LLC
+// SPDX-License-Identifier: AGPL-3.0-only
+
 import React from 'react';
 import classNames from 'classnames';
 
+import { About } from './conversation/About';
 import { Avatar } from './Avatar';
 import { Emojify } from './conversation/Emojify';
+import { InContactsIcon } from './InContactsIcon';
 
 import { LocalizerType } from '../types/Util';
+import { ColorType } from '../types/Colors';
 
-interface Props {
-  phoneNumber: string;
+type Props = {
+  about?: string;
+  avatarPath?: string;
+  color?: ColorType;
+  i18n: LocalizerType;
+  isAdmin?: boolean;
   isMe?: boolean;
   name?: string;
-  color: string;
-  verified: boolean;
-  profileName?: string;
-  avatarPath?: string;
-  i18n: LocalizerType;
   onClick?: () => void;
-}
+  phoneNumber?: string;
+  profileName?: string;
+  title: string;
+};
 
 export class ContactListItem extends React.Component<Props> {
-  public renderAvatar() {
+  public renderAvatar(): JSX.Element {
     const {
       avatarPath,
       i18n,
@@ -27,6 +35,7 @@ export class ContactListItem extends React.Component<Props> {
       name,
       phoneNumber,
       profileName,
+      title,
     } = this.props;
 
     return (
@@ -38,59 +47,50 @@ export class ContactListItem extends React.Component<Props> {
         name={name}
         phoneNumber={phoneNumber}
         profileName={profileName}
+        title={title}
         size={52}
       />
     );
   }
 
-  public render() {
-    const {
-      i18n,
-      name,
-      onClick,
-      isMe,
-      phoneNumber,
-      profileName,
-      verified,
-    } = this.props;
+  public render(): JSX.Element {
+    const { about, i18n, isAdmin, isMe, name, onClick, title } = this.props;
 
-    const title = name ? name : phoneNumber;
-    const displayName = isMe ? i18n('me') : title;
-
-    const profileElement =
-      !isMe && profileName && !name ? (
-        <span className="module-contact-list-item__text__profile-name">
-          ~<Emojify text={profileName} />
-        </span>
-      ) : null;
-
-    const showNumber = isMe || name;
-    const showVerified = !isMe && verified;
+    const displayName = isMe ? i18n('you') : title;
+    const shouldShowIcon = Boolean(name);
 
     return (
-      <div
-        role="button"
+      <button
         onClick={onClick}
         className={classNames(
           'module-contact-list-item',
           onClick ? 'module-contact-list-item--with-click-handler' : null
         )}
+        type="button"
       >
         {this.renderAvatar()}
         <div className="module-contact-list-item__text">
-          <div className="module-contact-list-item__text__name">
-            <Emojify text={displayName} /> {profileElement}
+          <div className="module-contact-list-item__left">
+            <div className="module-contact-list-item__text__name">
+              <Emojify text={displayName} />
+              {shouldShowIcon ? (
+                <span>
+                  {' '}
+                  <InContactsIcon i18n={i18n} />
+                </span>
+              ) : null}
+            </div>
+            <div className="module-contact-list-item__text__additional-data">
+              <About text={about} />
+            </div>
           </div>
-          <div className="module-contact-list-item__text__additional-data">
-            {showVerified ? (
-              <div className="module-contact-list-item__text__verified-icon" />
-            ) : null}
-            {showVerified ? ` ${i18n('verified')}` : null}
-            {showVerified && showNumber ? ' ∙ ' : null}
-            {showNumber ? phoneNumber : null}
-          </div>
+          {isAdmin ? (
+            <div className="module-contact-list-item__admin">
+              {i18n('GroupV2--admin')}
+            </div>
+          ) : null}
         </div>
-      </div>
+      </button>
     );
   }
 }

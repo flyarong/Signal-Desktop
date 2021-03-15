@@ -1,6 +1,12 @@
+// Copyright 2018-2021 Signal Messenger, LLC
+// SPDX-License-Identifier: AGPL-3.0-only
+
 import React from 'react';
-import ReactDOM from 'react-dom';
+import ReactDOM, { createPortal } from 'react-dom';
 import classNames from 'classnames';
+import { drop, groupBy, orderBy, take } from 'lodash';
+import { ContextMenu, ContextMenuTrigger, MenuItem } from 'react-contextmenu';
+import { Manager, Popper, Reference } from 'react-popper';
 
 import { Avatar } from '../Avatar';
 import { Spinner } from '../Spinner';
@@ -12,61 +18,87 @@ import { Timestamp } from './Timestamp';
 import { ContactName } from './ContactName';
 import { Quote, QuotedAttachmentType } from './Quote';
 import { EmbeddedContact } from './EmbeddedContact';
+import {
+  OwnProps as ReactionViewerProps,
+  ReactionViewer,
+} from './ReactionViewer';
+import { Props as ReactionPickerProps } from './ReactionPicker';
+import { Emoji } from '../emoji/Emoji';
+import { LinkPreviewDate } from './LinkPreviewDate';
+import { LinkPreviewType } from '../../types/message/LinkPreviews';
+import { shouldUseFullSizeLinkPreviewImage } from '../../linkPreviews/shouldUseFullSizeLinkPreviewImage';
 
 import {
+  AttachmentType,
   canDisplayImage,
   getExtensionForDisplay,
   getGridDimensions,
   getImageDimensions,
   hasImage,
+  hasNotDownloaded,
   hasVideoScreenshot,
   isAudio,
   isImage,
   isImageAttachment,
   isVideo,
-} from '../../../ts/types/Attachment';
-import { AttachmentType } from '../../types/Attachment';
+} from '../../types/Attachment';
 import { ContactType } from '../../types/Contact';
 
 import { getIncrement } from '../../util/timer';
 import { isFileDangerous } from '../../util/isFileDangerous';
-import { ColorType, LocalizerType } from '../../types/Util';
-import { ContextMenu, ContextMenuTrigger, MenuItem } from 'react-contextmenu';
+import { BodyRangesType, LocalizerType, ThemeType } from '../../types/Util';
+import { ColorType } from '../../types/Colors';
+import { createRefMerger } from '../_util';
+import { emojiToData } from '../emoji/lib';
+import { SmartReactionPicker } from '../../state/smart/ReactionPicker';
 
-interface Trigger {
+type Trigger = {
   handleContextClick: (event: React.MouseEvent<HTMLDivElement>) => void;
-}
+};
 
-// Same as MIN_WIDTH in ImageGrid.tsx
-const MINIMUM_LINK_PREVIEW_IMAGE_WIDTH = 200;
-const STICKER_SIZE = 128;
+const STICKER_SIZE = 200;
 const SELECTED_TIMEOUT = 1000;
+const THREE_HOURS = 3 * 60 * 60 * 1000;
 
-interface LinkPreviewType {
-  title: string;
-  domain: string;
-  url: string;
-  isStickerPack: boolean;
-  image?: AttachmentType;
-}
+export const MessageStatuses = [
+  'delivered',
+  'error',
+  'partial-sent',
+  'read',
+  'sending',
+  'sent',
+] as const;
+export type MessageStatusType = typeof MessageStatuses[number];
+
+export const InteractionModes = ['mouse', 'keyboard'] as const;
+export type InteractionModeType = typeof InteractionModes[number];
+
+export const Directions = ['incoming', 'outgoing'] as const;
+export type DirectionType = typeof Directions[number];
+
+export const ConversationTypes = ['direct', 'group'] as const;
+export type ConversationTypesType = typeof ConversationTypes[number];
 
 export type PropsData = {
   id: string;
+  conversationId: string;
   text?: string;
   textPending?: boolean;
-  isSticker: boolean;
-  isSelected: boolean;
-  isSelectedCounter: number;
-  direction: 'incoming' | 'outgoing';
+  isSticker?: boolean;
+  isSelected?: boolean;
+  isSelectedCounter?: number;
+  interactionMode: InteractionModeType;
+  direction: DirectionType;
   timestamp: number;
-  status?: 'sending' | 'sent' | 'delivered' | 'read' | 'error';
+  status?: MessageStatusType;
   contact?: ContactType;
+  authorId: string;
+  authorTitle: string;
   authorName?: string;
   authorProfileName?: string;
-  /** Note: this should be formatted for display */
-  authorPhoneNumber: string;
+  authorPhoneNumber?: string;
   authorColor?: ColorType;
-  conversationType: 'group' | 'direct';
+  conversationType: ConversationTypesType;
   attachments?: Array<AttachmentType>;
   quote?: {
     text: string;
@@ -74,15 +106,17 @@ export type PropsData = {
     isFromMe: boolean;
     sentAt: number;
     authorId: string;
-    authorPhoneNumber: string;
+    authorPhoneNumber?: string;
     authorProfileName?: string;
+    authorTitle: string;
     authorName?: string;
     authorColor?: ColorType;
+    bodyRanges?: BodyRangesType;
     referencedMessageNotFound: boolean;
   };
   previews: Array<LinkPreviewType>;
   authorAvatarPath?: string;
-  isExpired: boolean;
+  isExpired?: boolean;
 
   isTapToView?: boolean;
   isTapToViewExpired?: boolean;
@@ -90,10 +124,23 @@ export type PropsData = {
 
   expirationLength?: number;
   expirationTimestamp?: number;
+
+  reactions?: ReactionViewerProps['reactions'];
+  selectedReaction?: string;
+
+  deletedForEveryone?: boolean;
+
+  canReply: boolean;
+  canDownload: boolean;
+  canDeleteForEveryone: boolean;
+  isBlocked: boolean;
+  isMessageRequestAccepted: boolean;
+  bodyRanges?: BodyRangesType;
 };
 
-type PropsHousekeeping = {
+export type PropsHousekeeping = {
   i18n: LocalizerType;
+  theme?: ThemeType;
   disableMenu?: boolean;
   disableScroll?: boolean;
   collapseMetadata?: boolean;
@@ -102,67 +149,101 @@ type PropsHousekeeping = {
 export type PropsActions = {
   clearSelectedMessage: () => unknown;
 
+  reactToMessage: (
+    id: string,
+    { emoji, remove }: { emoji: string; remove: boolean }
+  ) => void;
   replyToMessage: (id: string) => void;
   retrySend: (id: string) => void;
   deleteMessage: (id: string) => void;
+  deleteMessageForEveryone: (id: string) => void;
   showMessageDetail: (id: string) => void;
 
   openConversation: (conversationId: string, messageId?: string) => void;
-  showContactDetail: (
-    options: { contact: ContactType; signalAccount?: string }
-  ) => void;
+  showContactDetail: (options: {
+    contact: ContactType;
+    signalAccount?: string;
+  }) => void;
+  showContactModal: (contactId: string) => void;
 
-  showVisualAttachment: (
-    options: { attachment: AttachmentType; messageId: string }
-  ) => void;
-  downloadAttachment: (
-    options: {
-      attachment: AttachmentType;
-      timestamp: number;
-      isDangerous: boolean;
-    }
-  ) => void;
+  kickOffAttachmentDownload: (options: {
+    attachment: AttachmentType;
+    messageId: string;
+  }) => void;
+  showVisualAttachment: (options: {
+    attachment: AttachmentType;
+    messageId: string;
+  }) => void;
+  downloadAttachment: (options: {
+    attachment: AttachmentType;
+    timestamp: number;
+    isDangerous: boolean;
+  }) => void;
   displayTapToViewMessage: (messageId: string) => unknown;
 
   openLink: (url: string) => void;
-  scrollToQuotedMessage: (
-    options: {
-      author: string;
-      sentAt: number;
-    }
-  ) => void;
+  scrollToQuotedMessage: (options: {
+    authorId: string;
+    sentAt: number;
+  }) => void;
+  selectMessage?: (messageId: string, conversationId: string) => unknown;
+
+  showExpiredIncomingTapToViewToast: () => unknown;
+  showExpiredOutgoingTapToViewToast: () => unknown;
 };
 
-export type Props = PropsData & PropsHousekeeping & PropsActions;
+export type Props = PropsData &
+  PropsHousekeeping &
+  PropsActions &
+  Pick<ReactionPickerProps, 'renderEmojiPicker'>;
 
-interface State {
+type State = {
   expiring: boolean;
   expired: boolean;
   imageBroken: boolean;
 
-  isSelected: boolean;
-  prevSelectedCounter: number;
-}
+  isSelected?: boolean;
+  prevSelectedCounter?: number;
+
+  reactionViewerRoot: HTMLDivElement | null;
+  reactionPickerRoot: HTMLDivElement | null;
+
+  isWide: boolean;
+
+  canDeleteForEveryone: boolean;
+};
 
 const EXPIRATION_CHECK_MINIMUM = 2000;
 const EXPIRED_DELAY = 600;
 
 export class Message extends React.PureComponent<Props, State> {
-  public captureMenuTriggerBound: (trigger: any) => void;
-  public showMenuBound: (event: React.MouseEvent<HTMLDivElement>) => void;
-  public handleImageErrorBound: () => void;
-
   public menuTriggerRef: Trigger | undefined;
-  public expirationCheckInterval: any;
-  public expiredTimeout: any;
-  public selectedTimeout: any;
+
+  public audioRef: React.RefObject<HTMLAudioElement> = React.createRef();
+
+  public focusRef: React.RefObject<HTMLDivElement> = React.createRef();
+
+  public reactionsContainerRef: React.RefObject<
+    HTMLDivElement
+  > = React.createRef();
+
+  public reactionsContainerRefMerger = createRefMerger();
+
+  public wideMl: MediaQueryList;
+
+  public expirationCheckInterval: NodeJS.Timeout | undefined;
+
+  public expiredTimeout: NodeJS.Timeout | undefined;
+
+  public selectedTimeout: NodeJS.Timeout | undefined;
+
+  public deleteForEveryoneTimeout: NodeJS.Timeout | undefined;
 
   public constructor(props: Props) {
     super(props);
 
-    this.captureMenuTriggerBound = this.captureMenuTrigger.bind(this);
-    this.showMenuBound = this.showMenu.bind(this);
-    this.handleImageErrorBound = this.handleImageError.bind(this);
+    this.wideMl = window.matchMedia('(min-width: 926px)');
+    this.wideMl.addEventListener('change', this.handleWideMlChange);
 
     this.state = {
       expiring: false,
@@ -171,26 +252,106 @@ export class Message extends React.PureComponent<Props, State> {
 
       isSelected: props.isSelected,
       prevSelectedCounter: props.isSelectedCounter,
+
+      reactionViewerRoot: null,
+      reactionPickerRoot: null,
+
+      isWide: this.wideMl.matches,
+
+      canDeleteForEveryone: props.canDeleteForEveryone,
     };
   }
 
   public static getDerivedStateFromProps(props: Props, state: State): State {
+    const newState = {
+      ...state,
+      canDeleteForEveryone:
+        props.canDeleteForEveryone && state.canDeleteForEveryone,
+    };
+
+    if (!props.isSelected) {
+      return {
+        ...newState,
+        isSelected: false,
+        prevSelectedCounter: 0,
+      };
+    }
+
     if (
       props.isSelected &&
       props.isSelectedCounter !== state.prevSelectedCounter
     ) {
       return {
-        ...state,
+        ...newState,
         isSelected: props.isSelected,
         prevSelectedCounter: props.isSelectedCounter,
       };
     }
 
-    return state;
+    return newState;
   }
 
-  public componentDidMount() {
+  private hasReactions(): boolean {
+    const { reactions } = this.props;
+    return Boolean(reactions && reactions.length);
+  }
+
+  public handleWideMlChange = (event: MediaQueryListEvent): void => {
+    this.setState({ isWide: event.matches });
+  };
+
+  public captureMenuTrigger = (triggerRef: Trigger): void => {
+    this.menuTriggerRef = triggerRef;
+  };
+
+  public showMenu = (event: React.MouseEvent<HTMLDivElement>): void => {
+    if (this.menuTriggerRef) {
+      this.menuTriggerRef.handleContextClick(event);
+    }
+  };
+
+  public handleImageError = (): void => {
+    const { id } = this.props;
+    window.log.info(
+      `Message ${id}: Image failed to load; failing over to placeholder`
+    );
+    this.setState({
+      imageBroken: true,
+    });
+  };
+
+  public handleFocus = (): void => {
+    const { interactionMode } = this.props;
+
+    if (interactionMode === 'keyboard') {
+      this.setSelected();
+    }
+  };
+
+  public setSelected = (): void => {
+    const { id, conversationId, selectMessage } = this.props;
+
+    if (selectMessage) {
+      selectMessage(id, conversationId);
+    }
+  };
+
+  public setFocus = (): void => {
+    const container = this.focusRef.current;
+
+    if (container && !container.contains(document.activeElement)) {
+      container.focus();
+    }
+  };
+
+  public componentDidMount(): void {
     this.startSelectedTimer();
+    this.startDeleteForEveryoneTimer();
+
+    const { isSelected } = this.props;
+    if (isSelected) {
+      this.setFocus();
+    }
 
     const { expirationLength } = this.props;
     if (!expirationLength) {
@@ -207,9 +368,9 @@ export class Message extends React.PureComponent<Props, State> {
     }, checkFrequency);
   }
 
-  public componentWillUnmount() {
+  public componentWillUnmount(): void {
     if (this.selectedTimeout) {
-      clearInterval(this.selectedTimeout);
+      clearTimeout(this.selectedTimeout);
     }
     if (this.expirationCheckInterval) {
       clearInterval(this.expirationCheckInterval);
@@ -217,17 +378,36 @@ export class Message extends React.PureComponent<Props, State> {
     if (this.expiredTimeout) {
       clearTimeout(this.expiredTimeout);
     }
+    if (this.deleteForEveryoneTimeout) {
+      clearTimeout(this.deleteForEveryoneTimeout);
+    }
+    this.toggleReactionViewer(true);
+    this.toggleReactionPicker(true);
+
+    this.wideMl.removeEventListener('change', this.handleWideMlChange);
   }
 
-  public componentDidUpdate() {
+  public componentDidUpdate(prevProps: Props): void {
+    const { canDeleteForEveryone, isSelected } = this.props;
+
     this.startSelectedTimer();
 
+    if (!prevProps.isSelected && isSelected) {
+      this.setFocus();
+    }
+
     this.checkExpired();
+
+    if (canDeleteForEveryone !== prevProps.canDeleteForEveryone) {
+      this.startDeleteForEveryoneTimer();
+    }
   }
 
-  public startSelectedTimer() {
+  public startSelectedTimer(): void {
+    const { clearSelectedMessage, interactionMode } = this.props;
     const { isSelected } = this.state;
-    if (!isSelected) {
+
+    if (interactionMode === 'keyboard' || !isSelected) {
       return;
     }
 
@@ -235,12 +415,35 @@ export class Message extends React.PureComponent<Props, State> {
       this.selectedTimeout = setTimeout(() => {
         this.selectedTimeout = undefined;
         this.setState({ isSelected: false });
-        this.props.clearSelectedMessage();
+        clearSelectedMessage();
       }, SELECTED_TIMEOUT);
     }
   }
 
-  public checkExpired() {
+  public startDeleteForEveryoneTimer(): void {
+    if (this.deleteForEveryoneTimeout) {
+      clearTimeout(this.deleteForEveryoneTimeout);
+    }
+
+    const { canDeleteForEveryone } = this.props;
+
+    if (!canDeleteForEveryone) {
+      return;
+    }
+
+    const { timestamp } = this.props;
+    const timeToDeletion = timestamp - Date.now() + THREE_HOURS;
+
+    if (timeToDeletion <= 0) {
+      this.setState({ canDeleteForEveryone: false });
+    } else {
+      this.deleteForEveryoneTimeout = setTimeout(() => {
+        this.setState({ canDeleteForEveryone: false });
+      }, timeToDeletion);
+    }
+  }
+
+  public checkExpired(): void {
     const now = Date.now();
     const { isExpired, expirationTimestamp, expirationLength } = this.props;
 
@@ -265,27 +468,88 @@ export class Message extends React.PureComponent<Props, State> {
     }
   }
 
-  public handleImageError() {
-    // tslint:disable-next-line no-console
-    console.log('Message: Image failed to load; failing over to placeholder');
-    this.setState({
-      imageBroken: true,
-    });
+  private areLinksEnabled(): boolean {
+    const { isMessageRequestAccepted, isBlocked } = this.props;
+    return isMessageRequestAccepted && !isBlocked;
   }
 
-  public renderMetadata() {
+  public renderTimestamp(): JSX.Element {
+    const {
+      direction,
+      i18n,
+      id,
+      isSticker,
+      isTapToViewExpired,
+      showMessageDetail,
+      status,
+      text,
+      timestamp,
+    } = this.props;
+
+    const isShowingImage = this.isShowingImage();
+    const withImageNoCaption = Boolean(!isSticker && !text && isShowingImage);
+
+    const isError = status === 'error' && direction === 'outgoing';
+    const isPartiallySent =
+      status === 'partial-sent' && direction === 'outgoing';
+
+    if (isError || isPartiallySent) {
+      return (
+        <span
+          className={classNames({
+            'module-message__metadata__date': true,
+            'module-message__metadata__date--with-sticker': isSticker,
+            [`module-message__metadata__date--${direction}`]: !isSticker,
+            'module-message__metadata__date--with-image-no-caption': withImageNoCaption,
+          })}
+        >
+          {isError ? (
+            i18n('sendFailed')
+          ) : (
+            <button
+              type="button"
+              className="module-message__metadata__tapable"
+              onClick={(event: React.MouseEvent) => {
+                event.stopPropagation();
+                event.preventDefault();
+
+                showMessageDetail(id);
+              }}
+            >
+              {i18n('partiallySent')}
+            </button>
+          )}
+        </span>
+      );
+    }
+
+    const metadataDirection = isSticker ? undefined : direction;
+
+    return (
+      <Timestamp
+        i18n={i18n}
+        timestamp={timestamp}
+        extended
+        direction={metadataDirection}
+        withImageNoCaption={withImageNoCaption}
+        withSticker={isSticker}
+        withTapToViewExpired={isTapToViewExpired}
+        module="module-message__metadata__date"
+      />
+    );
+  }
+
+  public renderMetadata(): JSX.Element | null {
     const {
       collapseMetadata,
       direction,
       expirationLength,
       expirationTimestamp,
-      i18n,
       isSticker,
       isTapToViewExpired,
       status,
       text,
       textPending,
-      timestamp,
     } = this.props;
 
     if (collapseMetadata) {
@@ -294,46 +558,22 @@ export class Message extends React.PureComponent<Props, State> {
 
     const isShowingImage = this.isShowingImage();
     const withImageNoCaption = Boolean(!isSticker && !text && isShowingImage);
-    const showError = status === 'error' && direction === 'outgoing';
     const metadataDirection = isSticker ? undefined : direction;
 
     return (
       <div
         className={classNames(
           'module-message__metadata',
+          `module-message__metadata--${direction}`,
+          this.hasReactions()
+            ? 'module-message__metadata--with-reactions'
+            : null,
           withImageNoCaption
             ? 'module-message__metadata--with-image-no-caption'
             : null
         )}
       >
-        <span className="module-message__metadata__spacer" />
-        {showError ? (
-          <span
-            className={classNames(
-              'module-message__metadata__date',
-              isSticker ? 'module-message__metadata__date--with-sticker' : null,
-              !isSticker
-                ? `module-message__metadata__date--${direction}`
-                : null,
-              withImageNoCaption
-                ? 'module-message__metadata__date--with-image-no-caption'
-                : null
-            )}
-          >
-            {i18n('sendFailed')}
-          </span>
-        ) : (
-          <Timestamp
-            i18n={i18n}
-            timestamp={timestamp}
-            extended={true}
-            direction={metadataDirection}
-            withImageNoCaption={withImageNoCaption}
-            withSticker={isSticker}
-            withTapToViewExpired={isTapToViewExpired}
-            module="module-message__metadata__date"
-          />
-        )}
+        {this.renderTimestamp()}
         {expirationLength && expirationTimestamp ? (
           <ExpireTimer
             direction={metadataDirection}
@@ -349,7 +589,10 @@ export class Message extends React.PureComponent<Props, State> {
             <Spinner svgSize="small" size="14px" direction={direction} />
           </div>
         ) : null}
-        {!textPending && direction === 'outgoing' && status !== 'error' ? (
+        {!textPending &&
+        direction === 'outgoing' &&
+        status !== 'error' &&
+        status !== 'partial-sent' ? (
           <div
             className={classNames(
               'module-message__metadata__status-icon',
@@ -370,26 +613,30 @@ export class Message extends React.PureComponent<Props, State> {
     );
   }
 
-  public renderAuthor() {
+  public renderAuthor(): JSX.Element | null {
     const {
+      authorTitle,
       authorName,
       authorPhoneNumber,
       authorProfileName,
       collapseMetadata,
       conversationType,
       direction,
+      i18n,
       isSticker,
       isTapToView,
       isTapToViewExpired,
     } = this.props;
 
     if (collapseMetadata) {
-      return;
+      return null;
     }
 
-    const title = authorName ? authorName : authorPhoneNumber;
-
-    if (direction !== 'incoming' || conversationType !== 'group' || !title) {
+    if (
+      direction !== 'incoming' ||
+      conversationType !== 'group' ||
+      !authorTitle
+    ) {
       return null;
     }
 
@@ -404,17 +651,18 @@ export class Message extends React.PureComponent<Props, State> {
     return (
       <div className={moduleName}>
         <ContactName
+          title={authorTitle}
           phoneNumber={authorPhoneNumber}
           name={authorName}
           profileName={authorProfileName}
           module={moduleName}
+          i18n={i18n}
         />
       </div>
     );
   }
 
-  // tslint:disable-next-line max-func-body-length cyclomatic-complexity
-  public renderAttachment() {
+  public renderAttachment(): JSX.Element | null {
     const {
       attachments,
       collapseMetadata,
@@ -422,12 +670,15 @@ export class Message extends React.PureComponent<Props, State> {
       direction,
       i18n,
       id,
+      kickOffAttachmentDownload,
       quote,
       showVisualAttachment,
       isSticker,
       text,
+      theme,
     } = this.props;
-    const { imageBroken, isSelected } = this.state;
+
+    const { imageBroken } = this.state;
 
     if (!attachments || !attachments[0]) {
       return null;
@@ -444,11 +695,12 @@ export class Message extends React.PureComponent<Props, State> {
     if (
       displayImage &&
       !imageBroken &&
-      ((isImage(attachments) && hasImage(attachments)) ||
-        (isVideo(attachments) && hasVideoScreenshot(attachments)))
+      (isImage(attachments) || isVideo(attachments))
     ) {
       const prefix = isSticker ? 'sticker' : 'attachment';
       const bottomOverlay = !isSticker && !collapseMetadata;
+      // We only want users to tab into this if there's more than one
+      const tabIndex = attachments.length > 1 ? 0 : -1;
 
       return (
         <div
@@ -470,21 +722,28 @@ export class Message extends React.PureComponent<Props, State> {
             withContentAbove={isSticker || withContentAbove}
             withContentBelow={isSticker || withContentBelow}
             isSticker={isSticker}
-            isSelected={isSticker && isSelected}
             stickerSize={STICKER_SIZE}
             bottomOverlay={bottomOverlay}
             i18n={i18n}
-            onError={this.handleImageErrorBound}
+            theme={theme}
+            onError={this.handleImageError}
+            tabIndex={tabIndex}
             onClick={attachment => {
-              showVisualAttachment({ attachment, messageId: id });
+              if (hasNotDownloaded(attachment)) {
+                kickOffAttachmentDownload({ attachment, messageId: id });
+              } else {
+                showVisualAttachment({ attachment, messageId: id });
+              }
             }}
           />
         </div>
       );
-    } else if (!firstAttachment.pending && isAudio(attachments)) {
+    }
+    if (!firstAttachment.pending && isAudio(attachments)) {
       return (
         <audio
-          controls={true}
+          ref={this.audioRef}
+          controls
           className={classNames(
             'module-message__audio-attachment',
             withContentBelow
@@ -499,68 +758,86 @@ export class Message extends React.PureComponent<Props, State> {
           <source src={firstAttachment.url} />
         </audio>
       );
-    } else {
-      const { pending, fileName, fileSize, contentType } = firstAttachment;
-      const extension = getExtensionForDisplay({ contentType, fileName });
-      const isDangerous = isFileDangerous(fileName || '');
+    }
+    const { pending, fileName, fileSize, contentType } = firstAttachment;
+    const extension = getExtensionForDisplay({ contentType, fileName });
+    const isDangerous = isFileDangerous(fileName || '');
 
-      return (
-        <div
-          className={classNames(
-            'module-message__generic-attachment',
-            withContentBelow
-              ? 'module-message__generic-attachment--with-content-below'
-              : null,
-            withContentAbove
-              ? 'module-message__generic-attachment--with-content-above'
-              : null
-          )}
-        >
-          {pending ? (
-            <div className="module-message__generic-attachment__spinner-container">
-              <Spinner svgSize="small" size="24px" direction={direction} />
-            </div>
-          ) : (
-            <div className="module-message__generic-attachment__icon-container">
-              <div className="module-message__generic-attachment__icon">
-                {extension ? (
-                  <div className="module-message__generic-attachment__icon__extension">
-                    {extension}
-                  </div>
-                ) : null}
-              </div>
-              {isDangerous ? (
-                <div className="module-message__generic-attachment__icon-dangerous-container">
-                  <div className="module-message__generic-attachment__icon-dangerous" />
+    return (
+      <button
+        type="button"
+        className={classNames(
+          'module-message__generic-attachment',
+          withContentBelow
+            ? 'module-message__generic-attachment--with-content-below'
+            : null,
+          withContentAbove
+            ? 'module-message__generic-attachment--with-content-above'
+            : null,
+          !firstAttachment.url
+            ? 'module-message__generic-attachment--not-active'
+            : null
+        )}
+        // There's only ever one of these, so we don't want users to tab into it
+        tabIndex={-1}
+        onClick={(event: React.MouseEvent) => {
+          event.stopPropagation();
+          event.preventDefault();
+
+          if (hasNotDownloaded(firstAttachment)) {
+            kickOffAttachmentDownload({
+              attachment: firstAttachment,
+              messageId: id,
+            });
+            return;
+          }
+
+          this.openGenericAttachment();
+        }}
+      >
+        {pending ? (
+          <div className="module-message__generic-attachment__spinner-container">
+            <Spinner svgSize="small" size="24px" direction={direction} />
+          </div>
+        ) : (
+          <div className="module-message__generic-attachment__icon-container">
+            <div className="module-message__generic-attachment__icon">
+              {extension ? (
+                <div className="module-message__generic-attachment__icon__extension">
+                  {extension}
                 </div>
               ) : null}
             </div>
-          )}
-          <div className="module-message__generic-attachment__text">
-            <div
-              className={classNames(
-                'module-message__generic-attachment__file-name',
-                `module-message__generic-attachment__file-name--${direction}`
-              )}
-            >
-              {fileName}
-            </div>
-            <div
-              className={classNames(
-                'module-message__generic-attachment__file-size',
-                `module-message__generic-attachment__file-size--${direction}`
-              )}
-            >
-              {fileSize}
-            </div>
+            {isDangerous ? (
+              <div className="module-message__generic-attachment__icon-dangerous-container">
+                <div className="module-message__generic-attachment__icon-dangerous" />
+              </div>
+            ) : null}
+          </div>
+        )}
+        <div className="module-message__generic-attachment__text">
+          <div
+            className={classNames(
+              'module-message__generic-attachment__file-name',
+              `module-message__generic-attachment__file-name--${direction}`
+            )}
+          >
+            {fileName}
+          </div>
+          <div
+            className={classNames(
+              'module-message__generic-attachment__file-size',
+              `module-message__generic-attachment__file-size--${direction}`
+            )}
+          >
+            {fileSize}
           </div>
         </div>
-      );
-    }
+      </button>
+    );
   }
 
-  // tslint:disable-next-line cyclomatic-complexity max-func-body-length
-  public renderPreview() {
+  public renderPreview(): JSX.Element | null {
     const {
       attachments,
       conversationType,
@@ -569,6 +846,7 @@ export class Message extends React.PureComponent<Props, State> {
       openLink,
       previews,
       quote,
+      theme,
     } = this.props;
 
     // Attachments take precedence over Link Previews
@@ -589,56 +867,47 @@ export class Message extends React.PureComponent<Props, State> {
       Boolean(quote) ||
       (conversationType === 'group' && direction === 'incoming');
 
-    const previewHasImage = first.image && isImageAttachment(first.image);
-    const width = first.image && first.image.width;
-    const isFullSizeImage =
-      !first.isStickerPack &&
-      width &&
-      width >= MINIMUM_LINK_PREVIEW_IMAGE_WIDTH;
+    const previewHasImage = isImageAttachment(first.image);
+    const isFullSizeImage = shouldUseFullSizeLinkPreviewImage(first);
 
-    return (
-      <div
-        role="button"
-        className={classNames(
-          'module-message__link-preview',
-          withContentAbove
-            ? 'module-message__link-preview--with-content-above'
-            : null
-        )}
-        onClick={() => {
-          openLink(first.url);
-        }}
-      >
+    const linkPreviewDate = first.date || null;
+
+    const isClickable = this.areLinksEnabled();
+
+    const className = classNames(
+      'module-message__link-preview',
+      `module-message__link-preview--${direction}`,
+      {
+        'module-message__link-preview--with-content-above': withContentAbove,
+        'module-message__link-preview--nonclickable': !isClickable,
+      }
+    );
+    const contents = (
+      <>
         {first.image && previewHasImage && isFullSizeImage ? (
           <ImageGrid
             attachments={[first.image]}
             withContentAbove={withContentAbove}
-            withContentBelow={true}
-            onError={this.handleImageErrorBound}
+            withContentBelow
+            onError={this.handleImageError}
             i18n={i18n}
+            theme={theme}
           />
         ) : null}
-        <div
-          className={classNames(
-            'module-message__link-preview__content',
-            withContentAbove || isFullSizeImage
-              ? 'module-message__link-preview__content--with-content-above'
-              : null
-          )}
-        >
+        <div className="module-message__link-preview__content">
           {first.image && previewHasImage && !isFullSizeImage ? (
             <div className="module-message__link-preview__icon_container">
               <Image
                 smallCurveTopLeft={!withContentAbove}
-                noBorder={true}
-                noBackground={true}
-                softCorners={true}
+                noBorder
+                noBackground
+                softCorners
                 alt={i18n('previewThumbnail', [first.domain])}
                 height={72}
                 width={72}
                 url={first.image.url}
                 attachment={first.image}
-                onError={this.handleImageErrorBound}
+                onError={this.handleImageError}
                 i18n={i18n}
               />
             </div>
@@ -654,16 +923,52 @@ export class Message extends React.PureComponent<Props, State> {
             <div className="module-message__link-preview__title">
               {first.title}
             </div>
-            <div className="module-message__link-preview__location">
-              {first.domain}
+            {first.description && (
+              <div className="module-message__link-preview__description">
+                {first.description}
+              </div>
+            )}
+            <div className="module-message__link-preview__footer">
+              <div className="module-message__link-preview__location">
+                {first.domain}
+              </div>
+              <LinkPreviewDate
+                date={linkPreviewDate}
+                className="module-message__link-preview__date"
+              />
             </div>
           </div>
         </div>
-      </div>
+      </>
+    );
+
+    return isClickable ? (
+      <button
+        type="button"
+        className={className}
+        onKeyDown={(event: React.KeyboardEvent) => {
+          if (event.key === 'Enter' || event.key === 'Space') {
+            event.stopPropagation();
+            event.preventDefault();
+
+            openLink(first.url);
+          }
+        }}
+        onClick={(event: React.MouseEvent) => {
+          event.stopPropagation();
+          event.preventDefault();
+
+          openLink(first.url);
+        }}
+      >
+        {contents}
+      </button>
+    ) : (
+      <div className={className}>{contents}</div>
     );
   }
 
-  public renderQuote() {
+  public renderQuote(): JSX.Element | null {
     const {
       conversationType,
       authorColor,
@@ -688,7 +993,7 @@ export class Message extends React.PureComponent<Props, State> {
       ? undefined
       : () => {
           scrollToQuotedMessage({
-            author: quote.authorId,
+            authorId: quote.authorId,
             sentAt: quote.sentAt,
           });
         };
@@ -704,6 +1009,8 @@ export class Message extends React.PureComponent<Props, State> {
         authorProfileName={quote.authorProfileName}
         authorName={quote.authorName}
         authorColor={quoteColor}
+        authorTitle={quote.authorTitle}
+        bodyRanges={quote.bodyRanges}
         referencedMessageNotFound={referencedMessageNotFound}
         isFromMe={quote.isFromMe}
         withContentAbove={withContentAbove}
@@ -711,7 +1018,7 @@ export class Message extends React.PureComponent<Props, State> {
     );
   }
 
-  public renderEmbeddedContact() {
+  public renderEmbeddedContact(): JSX.Element | null {
     const {
       collapseMetadata,
       contact,
@@ -730,6 +1037,9 @@ export class Message extends React.PureComponent<Props, State> {
       conversationType === 'group' && direction === 'incoming';
     const withContentBelow = withCaption || !collapseMetadata;
 
+    const otherContent = (contact && contact.signalAccount) || withCaption;
+    const tabIndex = otherContent ? 0 : -1;
+
     return (
       <EmbeddedContact
         contact={contact}
@@ -740,19 +1050,20 @@ export class Message extends React.PureComponent<Props, State> {
         }}
         withContentAbove={withContentAbove}
         withContentBelow={withContentBelow}
+        tabIndex={tabIndex}
       />
     );
   }
 
-  public renderSendMessageButton() {
+  public renderSendMessageButton(): JSX.Element | null {
     const { contact, openConversation, i18n } = this.props;
     if (!contact || !contact.signalAccount) {
       return null;
     }
 
     return (
-      <div
-        role="button"
+      <button
+        type="button"
         onClick={() => {
           if (contact.signalAccount) {
             openConversation(contact.signalAccount);
@@ -761,21 +1072,24 @@ export class Message extends React.PureComponent<Props, State> {
         className="module-message__send-message-button"
       >
         {i18n('sendMessageToContact')}
-      </div>
+      </button>
     );
   }
 
-  public renderAvatar() {
+  public renderAvatar(): JSX.Element | undefined {
     const {
       authorAvatarPath,
+      authorId,
       authorName,
       authorPhoneNumber,
       authorProfileName,
+      authorTitle,
       collapseMetadata,
       authorColor,
       conversationType,
       direction,
       i18n,
+      showContactModal,
     } = this.props;
 
     if (
@@ -783,32 +1097,55 @@ export class Message extends React.PureComponent<Props, State> {
       conversationType !== 'group' ||
       direction === 'outgoing'
     ) {
-      return;
+      return undefined;
     }
 
     return (
-      <div className="module-message__author-avatar">
-        <Avatar
-          avatarPath={authorAvatarPath}
-          color={authorColor}
-          conversationType="direct"
-          i18n={i18n}
-          name={authorName}
-          phoneNumber={authorPhoneNumber}
-          profileName={authorProfileName}
-          size={28}
-        />
+      <div
+        className={classNames('module-message__author-avatar-container', {
+          'module-message__author-avatar-container--with-reactions': this.hasReactions(),
+        })}
+      >
+        <button
+          type="button"
+          className="module-message__author-avatar"
+          onClick={() => showContactModal(authorId)}
+          tabIndex={0}
+        >
+          <Avatar
+            avatarPath={authorAvatarPath}
+            color={authorColor}
+            conversationType="direct"
+            i18n={i18n}
+            name={authorName}
+            phoneNumber={authorPhoneNumber}
+            profileName={authorProfileName}
+            title={authorTitle}
+            size={28}
+          />
+        </button>
       </div>
     );
   }
 
-  public renderText() {
-    const { text, textPending, i18n, direction, status } = this.props;
+  public renderText(): JSX.Element | null {
+    const {
+      bodyRanges,
+      deletedForEveryone,
+      direction,
+      i18n,
+      openConversation,
+      status,
+      text,
+      textPending,
+    } = this.props;
 
-    const contents =
-      direction === 'incoming' && status === 'error'
-        ? i18n('incomingError')
-        : text;
+    // eslint-disable-next-line no-nested-ternary
+    const contents = deletedForEveryone
+      ? i18n('message--deletedForEveryone')
+      : direction === 'incoming' && status === 'error'
+      ? i18n('incomingError')
+      : text;
 
     if (!contents) {
       return null;
@@ -826,18 +1163,22 @@ export class Message extends React.PureComponent<Props, State> {
         )}
       >
         <MessageBody
-          text={contents || ''}
+          bodyRanges={bodyRanges}
+          disableLinks={!this.areLinksEnabled()}
+          direction={direction}
           i18n={i18n}
+          openConversation={openConversation}
+          text={contents || ''}
           textPending={textPending}
         />
       </div>
     );
   }
 
-  public renderError(isCorrectSide: boolean) {
+  public renderError(isCorrectSide: boolean): JSX.Element | null {
     const { status, direction } = this.props;
 
-    if (!isCorrectSide || status !== 'error') {
+    if (!isCorrectSide || (status !== 'error' && status !== 'partial-sent')) {
       return null;
     }
 
@@ -853,35 +1194,32 @@ export class Message extends React.PureComponent<Props, State> {
     );
   }
 
-  public captureMenuTrigger(triggerRef: Trigger) {
-    this.menuTriggerRef = triggerRef;
-  }
-  public showMenu(event: React.MouseEvent<HTMLDivElement>) {
-    if (this.menuTriggerRef) {
-      this.menuTriggerRef.handleContextClick(event);
-    }
-  }
-
-  public renderMenu(isCorrectSide: boolean, triggerId: string) {
+  public renderMenu(
+    isCorrectSide: boolean,
+    triggerId: string
+  ): JSX.Element | null {
     const {
       attachments,
+      canDownload,
+      canReply,
       direction,
       disableMenu,
-      downloadAttachment,
+      i18n,
       id,
       isSticker,
       isTapToView,
+      reactToMessage,
+      renderEmojiPicker,
       replyToMessage,
-      timestamp,
+      selectedReaction,
     } = this.props;
 
     if (!isCorrectSide || disableMenu) {
       return null;
     }
 
-    const fileName =
-      attachments && attachments[0] ? attachments[0].fileName : null;
-    const isDangerous = isFileDangerous(fileName || '');
+    const { reactionPickerRoot, isWide } = this.state;
+
     const multipleAttachments = attachments && attachments.length > 1;
     const firstAttachment = attachments && attachments[0];
 
@@ -891,15 +1229,13 @@ export class Message extends React.PureComponent<Props, State> {
       !isTapToView &&
       firstAttachment &&
       !firstAttachment.pending ? (
+        // This a menu meant for mouse use only
+        // eslint-disable-next-line max-len
+        // eslint-disable-next-line jsx-a11y/interactive-supports-focus, jsx-a11y/click-events-have-key-events
         <div
-          onClick={() => {
-            downloadAttachment({
-              isDangerous,
-              attachment: firstAttachment,
-              timestamp,
-            });
-          }}
+          onClick={this.openGenericAttachment}
           role="button"
+          aria-label={i18n('downloadAttachment')}
           className={classNames(
             'module-message__buttons__download',
             `module-message__buttons__download--${direction}`
@@ -907,12 +1243,48 @@ export class Message extends React.PureComponent<Props, State> {
         />
       ) : null;
 
+    const reactButton = (
+      <Reference>
+        {({ ref: popperRef }) => {
+          // Only attach the popper reference to the reaction button if it is
+          // visible in the page (it is hidden when the page is narrow)
+          const maybePopperRef = isWide ? popperRef : undefined;
+
+          return (
+            // This a menu meant for mouse use only
+            // eslint-disable-next-line max-len
+            // eslint-disable-next-line jsx-a11y/interactive-supports-focus, jsx-a11y/click-events-have-key-events
+            <div
+              ref={maybePopperRef}
+              onClick={(event: React.MouseEvent) => {
+                event.stopPropagation();
+                event.preventDefault();
+
+                this.toggleReactionPicker();
+              }}
+              role="button"
+              className="module-message__buttons__react"
+              aria-label={i18n('reactToMessage')}
+            />
+          );
+        }}
+      </Reference>
+    );
+
     const replyButton = (
+      // This a menu meant for mouse use only
+      // eslint-disable-next-line max-len
+      // eslint-disable-next-line jsx-a11y/interactive-supports-focus, jsx-a11y/click-events-have-key-events
       <div
-        onClick={() => {
+        onClick={(event: React.MouseEvent) => {
+          event.stopPropagation();
+          event.preventDefault();
+
           replyToMessage(id);
         }}
+        // This a menu meant for mouse use only
         role="button"
+        aria-label={i18n('replyToMessage')}
         className={classNames(
           'module-message__buttons__reply',
           `module-message__buttons__download--${direction}`
@@ -920,42 +1292,89 @@ export class Message extends React.PureComponent<Props, State> {
       />
     );
 
+    // This a menu meant for mouse use only
+    /* eslint-disable jsx-a11y/interactive-supports-focus */
+    /* eslint-disable jsx-a11y/click-events-have-key-events */
     const menuButton = (
-      <ContextMenuTrigger id={triggerId} ref={this.captureMenuTriggerBound}>
-        <div
-          role="button"
-          onClick={this.showMenuBound}
-          className={classNames(
-            'module-message__buttons__menu',
-            `module-message__buttons__download--${direction}`
-          )}
-        />
-      </ContextMenuTrigger>
-    );
+      <Reference>
+        {({ ref: popperRef }) => {
+          // Only attach the popper reference to the collapsed menu button if
+          // the reaction button is not visible in the page (it is hidden when
+          // the page is narrow)
+          const maybePopperRef = !isWide ? popperRef : undefined;
 
-    const first = direction === 'incoming' ? downloadButton : menuButton;
-    const last = direction === 'incoming' ? menuButton : downloadButton;
+          return (
+            <ContextMenuTrigger
+              id={triggerId}
+              // eslint-disable-next-line @typescript-eslint/no-explicit-any
+              ref={this.captureMenuTrigger as any}
+            >
+              <div
+                ref={maybePopperRef}
+                role="button"
+                onClick={this.showMenu}
+                aria-label={i18n('messageContextMenuButton')}
+                className={classNames(
+                  'module-message__buttons__menu',
+                  `module-message__buttons__download--${direction}`
+                )}
+              />
+            </ContextMenuTrigger>
+          );
+        }}
+      </Reference>
+    );
+    /* eslint-enable jsx-a11y/interactive-supports-focus */
+    /* eslint-enable jsx-a11y/click-events-have-key-events */
 
     return (
-      <div
-        className={classNames(
-          'module-message__buttons',
-          `module-message__buttons--${direction}`
-        )}
-      >
-        {first}
-        {replyButton}
-        {last}
-      </div>
+      <Manager>
+        <div
+          className={classNames(
+            'module-message__buttons',
+            `module-message__buttons--${direction}`
+          )}
+        >
+          {canReply ? reactButton : null}
+          {canDownload ? downloadButton : null}
+          {canReply ? replyButton : null}
+          {menuButton}
+        </div>
+        {reactionPickerRoot &&
+          createPortal(
+            // eslint-disable-next-line consistent-return
+            <Popper placement="top">
+              {({ ref, style }) => (
+                <SmartReactionPicker
+                  ref={ref}
+                  style={style}
+                  selected={selectedReaction}
+                  onClose={this.toggleReactionPicker}
+                  onPick={emoji => {
+                    this.toggleReactionPicker(true);
+                    reactToMessage(id, {
+                      emoji,
+                      remove: emoji === selectedReaction,
+                    });
+                  }}
+                  renderEmojiPicker={renderEmojiPicker}
+                />
+              )}
+            </Popper>,
+            reactionPickerRoot
+          )}
+      </Manager>
     );
   }
 
-  public renderContextMenu(triggerId: string) {
+  public renderContextMenu(triggerId: string): JSX.Element {
     const {
       attachments,
+      canDownload,
+      canReply,
       deleteMessage,
+      deleteMessageForEveryone,
       direction,
-      downloadAttachment,
       i18n,
       id,
       isSticker,
@@ -964,52 +1383,74 @@ export class Message extends React.PureComponent<Props, State> {
       retrySend,
       showMessageDetail,
       status,
-      timestamp,
     } = this.props;
 
-    const showRetry = status === 'error' && direction === 'outgoing';
-    const fileName =
-      attachments && attachments[0] ? attachments[0].fileName : null;
-    const isDangerous = isFileDangerous(fileName || '');
+    const { canDeleteForEveryone } = this.state;
+
+    const showRetry =
+      (status === 'error' || status === 'partial-sent') &&
+      direction === 'outgoing';
     const multipleAttachments = attachments && attachments.length > 1;
 
     const menu = (
       <ContextMenu id={triggerId}>
-        {!isSticker &&
+        {canDownload &&
+        !isSticker &&
         !multipleAttachments &&
         !isTapToView &&
         attachments &&
         attachments[0] ? (
           <MenuItem
             attributes={{
-              className: 'module-message__context__download',
+              className:
+                'module-message__context--icon module-message__context__download',
             }}
-            onClick={() => {
-              downloadAttachment({
-                attachment: attachments[0],
-                timestamp,
-                isDangerous,
-              });
-            }}
+            onClick={this.openGenericAttachment}
           >
             {i18n('downloadAttachment')}
           </MenuItem>
         ) : null}
+        {canReply ? (
+          <>
+            <MenuItem
+              attributes={{
+                className:
+                  'module-message__context--icon module-message__context__reply',
+              }}
+              onClick={(event: React.MouseEvent) => {
+                event.stopPropagation();
+                event.preventDefault();
+
+                replyToMessage(id);
+              }}
+            >
+              {i18n('replyToMessage')}
+            </MenuItem>
+            <MenuItem
+              attributes={{
+                className:
+                  'module-message__context--icon module-message__context__react',
+              }}
+              onClick={(event: React.MouseEvent) => {
+                event.stopPropagation();
+                event.preventDefault();
+
+                this.toggleReactionPicker();
+              }}
+            >
+              {i18n('reactToMessage')}
+            </MenuItem>
+          </>
+        ) : null}
         <MenuItem
           attributes={{
-            className: 'module-message__context__reply',
+            className:
+              'module-message__context--icon module-message__context__more-info',
           }}
-          onClick={() => {
-            replyToMessage(id);
-          }}
-        >
-          {i18n('replyToMessage')}
-        </MenuItem>
-        <MenuItem
-          attributes={{
-            className: 'module-message__context__more-info',
-          }}
-          onClick={() => {
+          onClick={(event: React.MouseEvent) => {
+            event.stopPropagation();
+            event.preventDefault();
+
             showMessageDetail(id);
           }}
         >
@@ -1018,9 +1459,13 @@ export class Message extends React.PureComponent<Props, State> {
         {showRetry ? (
           <MenuItem
             attributes={{
-              className: 'module-message__context__retry-send',
+              className:
+                'module-message__context--icon module-message__context__retry-send',
             }}
-            onClick={() => {
+            onClick={(event: React.MouseEvent) => {
+              event.stopPropagation();
+              event.preventDefault();
+
               retrySend(id);
             }}
           >
@@ -1029,14 +1474,34 @@ export class Message extends React.PureComponent<Props, State> {
         ) : null}
         <MenuItem
           attributes={{
-            className: 'module-message__context__delete-message',
+            className:
+              'module-message__context--icon module-message__context__delete-message',
           }}
-          onClick={() => {
+          onClick={(event: React.MouseEvent) => {
+            event.stopPropagation();
+            event.preventDefault();
+
             deleteMessage(id);
           }}
         >
           {i18n('deleteMessage')}
         </MenuItem>
+        {canDeleteForEveryone ? (
+          <MenuItem
+            attributes={{
+              className:
+                'module-message__context--icon module-message__context__delete-message-for-everyone',
+            }}
+            onClick={(event: React.MouseEvent) => {
+              event.stopPropagation();
+              event.preventDefault();
+
+              deleteMessageForEveryone(id);
+            }}
+          >
+            {i18n('deleteMessageForEveryone')}
+          </MenuItem>
+        ) : null}
       </ContextMenu>
     );
 
@@ -1048,40 +1513,35 @@ export class Message extends React.PureComponent<Props, State> {
 
     if (attachments && attachments.length) {
       if (isSticker) {
-        // Padding is 8px, on both sides
-        return STICKER_SIZE + 8 * 2;
+        // Padding is 8px, on both sides, plus two for 1px border
+        return STICKER_SIZE + 8 * 2 + 2;
       }
 
       const dimensions = getGridDimensions(attachments);
       if (dimensions) {
-        return dimensions.width;
+        // Add two for 1px border
+        return dimensions.width + 2;
       }
     }
 
-    if (previews && previews.length) {
-      const first = previews[0];
-
-      if (!first || !first.image) {
-        return;
-      }
-      const { width } = first.image;
-
-      if (
-        !first.isStickerPack &&
-        isImageAttachment(first.image) &&
-        width &&
-        width >= MINIMUM_LINK_PREVIEW_IMAGE_WIDTH
-      ) {
-        const dimensions = getImageDimensions(first.image);
-        if (dimensions) {
-          return dimensions.width;
-        }
+    const firstLinkPreview = (previews || [])[0];
+    if (
+      firstLinkPreview &&
+      firstLinkPreview.image &&
+      shouldUseFullSizeLinkPreviewImage(firstLinkPreview)
+    ) {
+      const dimensions = getImageDimensions(firstLinkPreview.image);
+      if (dimensions) {
+        // Add two for 1px border
+        return dimensions.width + 2;
       }
     }
 
-    return;
+    return undefined;
   }
 
+  // Messy return here.
+  // eslint-disable-next-line @typescript-eslint/explicit-module-boundary-types
   public isShowingImage() {
     const { isTapToView, attachments, previews } = this.props;
     const { imageBroken } = this.state;
@@ -1093,20 +1553,12 @@ export class Message extends React.PureComponent<Props, State> {
     if (attachments && attachments.length) {
       const displayImage = canDisplayImage(attachments);
 
-      return (
-        displayImage &&
-        ((isImage(attachments) && hasImage(attachments)) ||
-          (isVideo(attachments) && hasVideoScreenshot(attachments)))
-      );
+      return displayImage && (isImage(attachments) || isVideo(attachments));
     }
 
     if (previews && previews.length) {
       const first = previews[0];
       const { image } = first;
-
-      if (!image) {
-        return false;
-      }
 
       return isImageAttachment(image);
     }
@@ -1114,7 +1566,7 @@ export class Message extends React.PureComponent<Props, State> {
     return false;
   }
 
-  public isAttachmentPending() {
+  public isAttachmentPending(): boolean {
     const { attachments } = this.props;
 
     if (!attachments || attachments.length < 1) {
@@ -1126,7 +1578,7 @@ export class Message extends React.PureComponent<Props, State> {
     return Boolean(first.pending);
   }
 
-  public renderTapToViewIcon() {
+  public renderTapToViewIcon(): JSX.Element {
     const { direction, isTapToViewExpired } = this.props;
     const isDownloadPending = this.isAttachmentPending();
 
@@ -1147,7 +1599,7 @@ export class Message extends React.PureComponent<Props, State> {
     );
   }
 
-  public renderTapToViewText() {
+  public renderTapToViewText(): string | undefined {
     const {
       attachments,
       direction,
@@ -1170,14 +1622,15 @@ export class Message extends React.PureComponent<Props, State> {
       return;
     }
 
+    // eslint-disable-next-line consistent-return, no-nested-ternary
     return isTapToViewError
       ? i18n('incomingError')
       : direction === 'outgoing'
-        ? outgoingString
-        : incomingString;
+      ? outgoingString
+      : incomingString;
   }
 
-  public renderTapToView() {
+  public renderTapToView(): JSX.Element {
     const {
       collapseMetadata,
       conversationType,
@@ -1223,8 +1676,253 @@ export class Message extends React.PureComponent<Props, State> {
     );
   }
 
-  public renderContents() {
-    const { isTapToView } = this.props;
+  public toggleReactionViewer = (onlyRemove = false): void => {
+    this.setState(({ reactionViewerRoot }) => {
+      if (reactionViewerRoot) {
+        document.body.removeChild(reactionViewerRoot);
+        document.body.removeEventListener(
+          'click',
+          this.handleClickOutsideReactionViewer,
+          true
+        );
+
+        return { reactionViewerRoot: null };
+      }
+
+      if (!onlyRemove) {
+        const root = document.createElement('div');
+        document.body.appendChild(root);
+        document.body.addEventListener(
+          'click',
+          this.handleClickOutsideReactionViewer,
+          true
+        );
+
+        return {
+          reactionViewerRoot: root,
+        };
+      }
+
+      return { reactionViewerRoot: null };
+    });
+  };
+
+  public toggleReactionPicker = (onlyRemove = false): void => {
+    this.setState(({ reactionPickerRoot }) => {
+      if (reactionPickerRoot) {
+        document.body.removeChild(reactionPickerRoot);
+        document.body.removeEventListener(
+          'click',
+          this.handleClickOutsideReactionPicker,
+          true
+        );
+
+        return { reactionPickerRoot: null };
+      }
+
+      if (!onlyRemove) {
+        const root = document.createElement('div');
+        document.body.appendChild(root);
+        document.body.addEventListener(
+          'click',
+          this.handleClickOutsideReactionPicker,
+          true
+        );
+
+        return {
+          reactionPickerRoot: root,
+        };
+      }
+
+      return { reactionPickerRoot: null };
+    });
+  };
+
+  public handleClickOutsideReactionViewer = (e: MouseEvent): void => {
+    const { reactionViewerRoot } = this.state;
+    const { current: reactionsContainer } = this.reactionsContainerRef;
+    if (reactionViewerRoot && reactionsContainer) {
+      if (
+        !reactionViewerRoot.contains(e.target as HTMLElement) &&
+        !reactionsContainer.contains(e.target as HTMLElement)
+      ) {
+        this.toggleReactionViewer(true);
+      }
+    }
+  };
+
+  public handleClickOutsideReactionPicker = (e: MouseEvent): void => {
+    const { reactionPickerRoot } = this.state;
+    if (reactionPickerRoot) {
+      if (!reactionPickerRoot.contains(e.target as HTMLElement)) {
+        this.toggleReactionPicker(true);
+      }
+    }
+  };
+
+  public renderReactions(outgoing: boolean): JSX.Element | null {
+    const { reactions = [], i18n } = this.props;
+
+    if (!this.hasReactions()) {
+      return null;
+    }
+
+    const reactionsWithEmojiData = reactions.map(reaction => ({
+      ...reaction,
+      ...emojiToData(reaction.emoji),
+    }));
+
+    // Group by emoji and order each group by timestamp descending
+    const groupedAndSortedReactions = Object.values(
+      groupBy(reactionsWithEmojiData, 'short_name')
+    ).map(groupedReactions =>
+      orderBy(
+        groupedReactions,
+        [reaction => reaction.from.isMe, 'timestamp'],
+        ['desc', 'desc']
+      )
+    );
+    // Order groups by length and subsequently by most recent reaction
+    const ordered = orderBy(
+      groupedAndSortedReactions,
+      ['length', ([{ timestamp }]) => timestamp],
+      ['desc', 'desc']
+    );
+    // Take the first three groups for rendering
+    const toRender = take(ordered, 3).map(res => ({
+      emoji: res[0].emoji,
+      count: res.length,
+      isMe: res.some(re => Boolean(re.from.isMe)),
+    }));
+    const someNotRendered = ordered.length > 3;
+    // We only drop two here because the third emoji would be replaced by the
+    // more button
+    const maybeNotRendered = drop(ordered, 2);
+    const maybeNotRenderedTotal = maybeNotRendered.reduce(
+      (sum, res) => sum + res.length,
+      0
+    );
+    const notRenderedIsMe =
+      someNotRendered &&
+      maybeNotRendered.some(res => res.some(re => Boolean(re.from.isMe)));
+
+    const { reactionViewerRoot } = this.state;
+
+    const popperPlacement = outgoing ? 'bottom-end' : 'bottom-start';
+
+    return (
+      <Manager>
+        <Reference>
+          {({ ref: popperRef }) => (
+            <div
+              ref={this.reactionsContainerRefMerger(
+                this.reactionsContainerRef,
+                popperRef
+              )}
+              className={classNames(
+                'module-message__reactions',
+                outgoing
+                  ? 'module-message__reactions--outgoing'
+                  : 'module-message__reactions--incoming'
+              )}
+            >
+              {toRender.map((re, i) => {
+                const isLast = i === toRender.length - 1;
+                const isMore = isLast && someNotRendered;
+                const isMoreWithMe = isMore && notRenderedIsMe;
+
+                return (
+                  <button
+                    type="button"
+                    // eslint-disable-next-line react/no-array-index-key
+                    key={`${re.emoji}-${i}`}
+                    className={classNames(
+                      'module-message__reactions__reaction',
+                      re.count > 1
+                        ? 'module-message__reactions__reaction--with-count'
+                        : null,
+                      outgoing
+                        ? 'module-message__reactions__reaction--outgoing'
+                        : 'module-message__reactions__reaction--incoming',
+                      isMoreWithMe || (re.isMe && !isMoreWithMe)
+                        ? 'module-message__reactions__reaction--is-me'
+                        : null
+                    )}
+                    onClick={e => {
+                      e.stopPropagation();
+                      e.preventDefault();
+                      this.toggleReactionViewer(false);
+                    }}
+                    onKeyDown={e => {
+                      // Prevent enter key from opening stickers/attachments
+                      if (e.key === 'Enter') {
+                        e.stopPropagation();
+                      }
+                    }}
+                  >
+                    {isMore ? (
+                      <span
+                        className={classNames(
+                          'module-message__reactions__reaction__count',
+                          'module-message__reactions__reaction__count--no-emoji',
+                          isMoreWithMe
+                            ? 'module-message__reactions__reaction__count--is-me'
+                            : null
+                        )}
+                      >
+                        +{maybeNotRenderedTotal}
+                      </span>
+                    ) : (
+                      <>
+                        <Emoji size={16} emoji={re.emoji} />
+                        {re.count > 1 ? (
+                          <span
+                            className={classNames(
+                              'module-message__reactions__reaction__count',
+                              re.isMe
+                                ? 'module-message__reactions__reaction__count--is-me'
+                                : null
+                            )}
+                          >
+                            {re.count}
+                          </span>
+                        ) : null}
+                      </>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+          )}
+        </Reference>
+        {reactionViewerRoot &&
+          createPortal(
+            <Popper placement={popperPlacement}>
+              {({ ref, style }) => (
+                <ReactionViewer
+                  ref={ref}
+                  style={{
+                    ...style,
+                    zIndex: 2,
+                  }}
+                  reactions={reactions}
+                  i18n={i18n}
+                  onClose={this.toggleReactionViewer}
+                />
+              )}
+            </Popper>,
+            reactionViewerRoot
+          )}
+      </Manager>
+    );
+  }
+
+  public renderContents(): JSX.Element | null {
+    const { isTapToView, deletedForEveryone } = this.props;
+
+    if (deletedForEveryone) {
+      return this.renderText();
+    }
 
     if (isTapToView) {
       return (
@@ -1248,26 +1946,261 @@ export class Message extends React.PureComponent<Props, State> {
     );
   }
 
-  // tslint:disable-next-line cyclomatic-complexity
-  public render() {
+  public handleOpen = (
+    event: React.KeyboardEvent<HTMLDivElement> | React.MouseEvent
+  ): void => {
     const {
-      authorPhoneNumber,
-      authorColor,
       attachments,
-      conversationType,
-      direction,
+      contact,
       displayTapToViewMessage,
+      direction,
       id,
+      isTapToView,
+      isTapToViewExpired,
+      kickOffAttachmentDownload,
+      openConversation,
+      showContactDetail,
+      showVisualAttachment,
+      showExpiredIncomingTapToViewToast,
+      showExpiredOutgoingTapToViewToast,
+    } = this.props;
+    const { imageBroken } = this.state;
+
+    const isAttachmentPending = this.isAttachmentPending();
+
+    if (isTapToView) {
+      if (isAttachmentPending) {
+        return;
+      }
+
+      if (isTapToViewExpired) {
+        const action =
+          direction === 'outgoing'
+            ? showExpiredOutgoingTapToViewToast
+            : showExpiredIncomingTapToViewToast;
+        action();
+      } else {
+        event.preventDefault();
+        event.stopPropagation();
+
+        displayTapToViewMessage(id);
+      }
+
+      return;
+    }
+
+    if (
+      !imageBroken &&
+      attachments &&
+      attachments.length > 0 &&
+      !isAttachmentPending &&
+      (isImage(attachments) || isVideo(attachments)) &&
+      hasNotDownloaded(attachments[0])
+    ) {
+      event.preventDefault();
+      event.stopPropagation();
+
+      const attachment = attachments[0];
+
+      kickOffAttachmentDownload({ attachment, messageId: id });
+
+      return;
+    }
+
+    if (
+      !imageBroken &&
+      attachments &&
+      attachments.length > 0 &&
+      !isAttachmentPending &&
+      canDisplayImage(attachments) &&
+      ((isImage(attachments) && hasImage(attachments)) ||
+        (isVideo(attachments) && hasVideoScreenshot(attachments)))
+    ) {
+      event.preventDefault();
+      event.stopPropagation();
+
+      const attachment = attachments[0];
+
+      showVisualAttachment({ attachment, messageId: id });
+
+      return;
+    }
+
+    if (
+      attachments &&
+      attachments.length === 1 &&
+      !isAttachmentPending &&
+      !isAudio(attachments)
+    ) {
+      event.preventDefault();
+      event.stopPropagation();
+
+      this.openGenericAttachment();
+
+      return;
+    }
+
+    if (
+      !isAttachmentPending &&
+      isAudio(attachments) &&
+      this.audioRef &&
+      this.audioRef.current
+    ) {
+      event.preventDefault();
+      event.stopPropagation();
+
+      if (this.audioRef.current.paused) {
+        this.audioRef.current.play();
+      } else {
+        this.audioRef.current.pause();
+      }
+    }
+
+    if (contact && contact.signalAccount) {
+      openConversation(contact.signalAccount);
+
+      event.preventDefault();
+      event.stopPropagation();
+    }
+
+    if (contact) {
+      showContactDetail({ contact, signalAccount: contact.signalAccount });
+
+      event.preventDefault();
+      event.stopPropagation();
+    }
+  };
+
+  public openGenericAttachment = (event?: React.MouseEvent): void => {
+    const { attachments, downloadAttachment, timestamp } = this.props;
+
+    if (event) {
+      event.preventDefault();
+      event.stopPropagation();
+    }
+
+    if (!attachments || attachments.length !== 1) {
+      return;
+    }
+
+    const attachment = attachments[0];
+    const { fileName } = attachment;
+    const isDangerous = isFileDangerous(fileName || '');
+
+    downloadAttachment({
+      isDangerous,
+      attachment,
+      timestamp,
+    });
+  };
+
+  public handleKeyDown = (event: React.KeyboardEvent<HTMLDivElement>): void => {
+    // Do not allow reactions to error messages
+    const { canReply } = this.props;
+
+    if (
+      (event.key === 'E' || event.key === 'e') &&
+      (event.metaKey || event.ctrlKey) &&
+      event.shiftKey &&
+      canReply
+    ) {
+      this.toggleReactionPicker();
+    }
+
+    if (event.key !== 'Enter' && event.key !== 'Space') {
+      return;
+    }
+
+    this.handleOpen(event);
+  };
+
+  public handleClick = (event: React.MouseEvent): void => {
+    // We don't want clicks on body text to result in the 'default action' for the message
+    const { text } = this.props;
+    if (text && text.length > 0) {
+      return;
+    }
+
+    // If there an incomplete attachment, do not execute the default action
+    const { attachments } = this.props;
+    if (attachments && attachments.length > 0) {
+      const [firstAttachment] = attachments;
+      if (!firstAttachment.url) {
+        return;
+      }
+    }
+
+    this.handleOpen(event);
+  };
+
+  public renderContainer(): JSX.Element {
+    const {
+      authorColor,
+      deletedForEveryone,
+      direction,
       isSticker,
       isTapToView,
       isTapToViewExpired,
       isTapToViewError,
+    } = this.props;
+    const { isSelected } = this.state;
+
+    const isAttachmentPending = this.isAttachmentPending();
+
+    const width = this.getWidth();
+    const isShowingImage = this.isShowingImage();
+
+    const containerClassnames = classNames(
+      'module-message__container',
+      isSelected && !isSticker ? 'module-message__container--selected' : null,
+      isSticker ? 'module-message__container--with-sticker' : null,
+      !isSticker ? `module-message__container--${direction}` : null,
+      isTapToView ? 'module-message__container--with-tap-to-view' : null,
+      isTapToView && isTapToViewExpired
+        ? 'module-message__container--with-tap-to-view-expired'
+        : null,
+      !isSticker && direction === 'incoming'
+        ? `module-message__container--incoming-${authorColor}`
+        : null,
+      isTapToView && isAttachmentPending && !isTapToViewExpired
+        ? 'module-message__container--with-tap-to-view-pending'
+        : null,
+      isTapToView && isAttachmentPending && !isTapToViewExpired
+        ? `module-message__container--${direction}-${authorColor}-tap-to-view-pending`
+        : null,
+      isTapToViewError
+        ? 'module-message__container--with-tap-to-view-error'
+        : null,
+      this.hasReactions() ? 'module-message__container--with-reactions' : null,
+      deletedForEveryone
+        ? 'module-message__container--deleted-for-everyone'
+        : null
+    );
+    const containerStyles = {
+      width: isShowingImage ? width : undefined,
+    };
+
+    return (
+      <div className="module-message__container-outer">
+        <div className={containerClassnames} style={containerStyles}>
+          {this.renderAuthor()}
+          {this.renderContents()}
+        </div>
+        {this.renderReactions(direction === 'outgoing')}
+      </div>
+    );
+  }
+
+  public render(): JSX.Element | null {
+    const {
+      authorPhoneNumber,
+      attachments,
+      direction,
+      id,
+      isSticker,
       timestamp,
     } = this.props;
     const { expired, expiring, imageBroken, isSelected } = this.state;
-
-    const isAttachmentPending = this.isAttachmentPending();
-    const isButton = isTapToView && !isTapToViewExpired && !isAttachmentPending;
 
     // This id is what connects our triple-dot click with our associated pop-up menu.
     //   It needs to be unique.
@@ -1281,57 +2214,27 @@ export class Message extends React.PureComponent<Props, State> {
       return null;
     }
 
-    const width = this.getWidth();
-    const isShowingImage = this.isShowingImage();
-    const role = isButton ? 'button' : undefined;
-    const onClick = isButton ? () => displayTapToViewMessage(id) : undefined;
-
     return (
       <div
         className={classNames(
           'module-message',
           `module-message--${direction}`,
-          expiring ? 'module-message--expired' : null,
-          conversationType === 'group' ? 'module-message--group' : null
+          isSelected ? 'module-message--selected' : null,
+          expiring ? 'module-message--expired' : null
         )}
+        tabIndex={0}
+        // We pretend to be a button because we sometimes contain buttons and a button
+        //   cannot be within another button
+        role="button"
+        onKeyDown={this.handleKeyDown}
+        onClick={this.handleClick}
+        onFocus={this.handleFocus}
+        ref={this.focusRef}
       >
         {this.renderError(direction === 'incoming')}
         {this.renderMenu(direction === 'outgoing', triggerId)}
-        <div
-          className={classNames(
-            'module-message__container',
-            isSelected && !isSticker
-              ? 'module-message__container--selected'
-              : null,
-            isSticker ? 'module-message__container--with-sticker' : null,
-            !isSticker ? `module-message__container--${direction}` : null,
-            isTapToView ? 'module-message__container--with-tap-to-view' : null,
-            isTapToView && isTapToViewExpired
-              ? 'module-message__container--with-tap-to-view-expired'
-              : null,
-            !isSticker && direction === 'incoming'
-              ? `module-message__container--incoming-${authorColor}`
-              : null,
-            isTapToView && isAttachmentPending && !isTapToViewExpired
-              ? 'module-message__container--with-tap-to-view-pending'
-              : null,
-            isTapToView && isAttachmentPending && !isTapToViewExpired
-              ? `module-message__container--${direction}-${authorColor}-tap-to-view-pending`
-              : null,
-            isTapToViewError
-              ? 'module-message__container--with-tap-to-view-error'
-              : null
-          )}
-          style={{
-            width: isShowingImage ? width : undefined,
-          }}
-          role={role}
-          onClick={onClick}
-        >
-          {this.renderAuthor()}
-          {this.renderContents()}
-          {this.renderAvatar()}
-        </div>
+        {this.renderAvatar()}
+        {this.renderContainer()}
         {this.renderError(direction === 'outgoing')}
         {this.renderMenu(direction === 'incoming', triggerId)}
         {this.renderContextMenu(triggerId)}

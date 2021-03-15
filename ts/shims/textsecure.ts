@@ -1,48 +1,12 @@
-type LoggerType = (...args: Array<any>) => void;
-
-type TextSecureType = {
-  storage: {
-    user: {
-      getNumber: () => string;
-    };
-  };
-  messaging: {
-    sendStickerPackSync: (
-      operations: Array<{
-        packId: string;
-        packKey: string;
-        installed: boolean;
-      }>,
-      options: Object
-    ) => Promise<void>;
-  };
-};
-
-type ConversationControllerType = {
-  prepareForSend: (
-    id: string,
-    options: Object
-  ) => {
-    wrap: (promise: Promise<any>) => Promise<void>;
-    sendOptions: Object;
-  };
-};
-
-interface ShimmedWindow extends Window {
-  log: {
-    error: LoggerType;
-    info: LoggerType;
-  };
-  textsecure: TextSecureType;
-  ConversationController: ConversationControllerType;
-}
+// Copyright 2019-2020 Signal Messenger, LLC
+// SPDX-License-Identifier: AGPL-3.0-only
 
 export function sendStickerPackSync(
   packId: string,
   packKey: string,
   installed: boolean
-) {
-  const { ConversationController, textsecure, log } = window as ShimmedWindow;
+): void {
+  const { ConversationController, textsecure, log } = window;
   const ourNumber = textsecure.storage.user.getNumber();
   const { wrap, sendOptions } = ConversationController.prepareForSend(
     ourNumber,

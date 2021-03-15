@@ -1,3 +1,6 @@
+// Copyright 2018-2020 Signal Messenger, LLC
+// SPDX-License-Identifier: AGPL-3.0-only
+
 /* global Signal: false */
 /* global Whisper: false */
 /* global _: false */
@@ -19,7 +22,8 @@ const pify = require('pify');
 const rimraf = require('rimraf');
 const electronRemote = require('electron').remote;
 
-const crypto = require('./crypto');
+const crypto = require('../../ts/Crypto');
+const { getEnvironment } = require('../../ts/environment');
 
 const { dialog, BrowserWindow } = electronRemote;
 
@@ -184,7 +188,6 @@ async function importConversationsFromJSON(conversations, options) {
     if (haveConversationAlready) {
       skipCount += 1;
       count += 1;
-      // eslint-disable-next-line no-continue
       continue;
     }
 
@@ -387,7 +390,7 @@ function _getExportAttachmentFileName(message, index, attachment) {
     return _trimFileName(attachment.fileName);
   }
 
-  let name = attachment.id;
+  let name = attachment.cdnId || attachment.cdnKey || attachment.id;
 
   if (attachment.contentType) {
     const components = attachment.contentType.split('/');
@@ -459,12 +462,7 @@ async function writeQuoteThumbnails(quotedAttachments, options) {
   try {
     await Promise.all(
       _.map(quotedAttachments, (attachment, index) =>
-        writeQuoteThumbnail(
-          attachment,
-          Object.assign({}, options, {
-            index,
-          })
-        )
+        writeQuoteThumbnail(attachment, { ...options, index })
       )
     );
   } catch (error) {
@@ -531,12 +529,7 @@ async function writeAttachments(attachments, options) {
   const { name } = options;
 
   const promises = _.map(attachments, (attachment, index) =>
-    writeAttachment(
-      attachment,
-      Object.assign({}, options, {
-        index,
-      })
-    )
+    writeAttachment(attachment, { ...options, index })
   );
   try {
     await Promise.all(promises);
@@ -575,14 +568,7 @@ async function writeContactAvatars(contact, options) {
 
   try {
     await Promise.all(
-      _.map(contact, (item, index) =>
-        writeAvatar(
-          item,
-          Object.assign({}, options, {
-            index,
-          })
-        )
-      )
+      _.map(contact, (item, index) => writeAvatar(item, { ...options, index }))
     );
   } catch (error) {
     window.log.error(
@@ -620,12 +606,7 @@ async function writePreviews(preview, options) {
   try {
     await Promise.all(
       _.map(preview, (item, index) =>
-        writePreviewImage(
-          item,
-          Object.assign({}, options, {
-            index,
-          })
-        )
+        writePreviewImage(item, { ...options, index })
       )
     );
   } catch (error) {
@@ -693,6 +674,7 @@ async function exportConversation(conversation, options = {}) {
 
   // We're looping from the most recent to the oldest
   let lastReceivedAt = Number.MAX_VALUE;
+  let lastSentAt = Number.MAX_VALUE;
 
   while (!complete) {
     // eslint-disable-next-line no-await-in-loop
@@ -701,6 +683,7 @@ async function exportConversation(conversation, options = {}) {
       {
         limit: CHUNK_SIZE,
         receivedAt: lastReceivedAt,
+        sentAt: lastSentAt,
         MessageCollection: Whisper.MessageCollection,
       }
     );
@@ -716,7 +699,6 @@ async function exportConversation(conversation, options = {}) {
 
       // skip message if it is disappearing, no matter the amount of time left
       if (message.expireTimer || message.messageTimer || message.isViewOnce) {
-        // eslint-disable-next-line no-continue
         continue;
       }
 
@@ -792,6 +774,7 @@ async function exportConversation(conversation, options = {}) {
     const last = messages.length > 0 ? messages[messages.length - 1] : null;
     if (last) {
       lastReceivedAt = last.received_at;
+      lastSentAt = last.sent_at;
     }
 
     if (messages.length < CHUNK_SIZE) {
@@ -866,25 +849,25 @@ async function exportConversations(options) {
   window.log.info('Done exporting conversations!');
 }
 
-function getDirectory(options = {}) {
-  return new Promise((resolve, reject) => {
-    const browserWindow = BrowserWindow.getFocusedWindow();
-    const dialogOptions = {
-      title: options.title,
-      properties: ['openDirectory'],
-      buttonLabel: options.buttonLabel,
-    };
+async function getDirectory(options = {}) {
+  const browserWindow = BrowserWindow.getFocusedWindow();
+  const dialogOptions = {
+    title: options.title,
+    properties: ['openDirectory'],
+    buttonLabel: options.buttonLabel,
+  };
 
-    dialog.showOpenDialog(browserWindow, dialogOptions, directory => {
-      if (!directory || !directory[0]) {
-        const error = new Error('Error choosing directory');
-        error.name = 'ChooseError';
-        return reject(error);
-      }
+  const { canceled, filePaths } = await dialog.showOpenDialog(
+    browserWindow,
+    dialogOptions
+  );
+  if (canceled || !filePaths || !filePaths[0]) {
+    const error = new Error('Error choosing directory');
+    error.name = 'ChooseError';
+    throw error;
+  }
 
-      return resolve(directory[0]);
-    });
-  });
+  return filePaths[0];
 }
 
 function getDirContents(dir) {
@@ -1118,8 +1101,14 @@ async function importConversations(dir, options) {
 
 function getMessageKey(message) {
   const ourNumber = textsecure.storage.user.getNumber();
+  const ourUuid = textsecure.storage.user.getUuid();
   const source = message.source || ourNumber;
-  if (source === ourNumber) {
+  const sourceUuid = message.sourceUuid || ourUuid;
+
+  if (
+    (source && source === ourNumber) ||
+    (sourceUuid && sourceUuid === ourUuid)
+  ) {
     return `${source} ${message.timestamp}`;
   }
 
@@ -1210,7 +1199,7 @@ function deleteAll(pattern) {
 const ARCHIVE_NAME = 'messages.tar.gz';
 
 async function exportToDirectory(directory, options) {
-  const env = window.getEnvironment();
+  const env = getEnvironment();
   if (env !== 'test') {
     throw new Error('export is only supported in test mode');
   }
@@ -1230,12 +1219,11 @@ async function exportToDirectory(directory, options) {
     const attachmentsDir = await createDirectory(directory, 'attachments');
 
     await exportConversationListToFile(stagingDir);
-    await exportConversations(
-      Object.assign({}, options, {
-        messagesDir: stagingDir,
-        attachmentsDir,
-      })
-    );
+    await exportConversations({
+      ...options,
+      messagesDir: stagingDir,
+      attachmentsDir,
+    });
 
     const archivePath = path.join(directory, ARCHIVE_NAME);
     await compressArchive(archivePath, stagingDir);
@@ -1275,14 +1263,11 @@ async function importFromDirectory(directory, options) {
       loadConversationLookup(),
     ]);
     const [messageLookup, conversationLookup] = lookups;
-    options = Object.assign({}, options, {
-      messageLookup,
-      conversationLookup,
-    });
+    options = { ...options, messageLookup, conversationLookup };
 
     const archivePath = path.join(directory, ARCHIVE_NAME);
     if (fs.existsSync(archivePath)) {
-      const env = window.getEnvironment();
+      const env = getEnvironment();
       if (env !== 'test') {
         throw new Error('import is only supported in test mode');
       }
@@ -1306,11 +1291,9 @@ async function importFromDirectory(directory, options) {
         await decryptFile(archivePath, decryptedArchivePath, options);
         await decompressArchive(decryptedArchivePath, stagingDir);
 
-        options = Object.assign({}, options, {
-          attachmentsDir,
-        });
+        options = { ...options, attachmentsDir };
         const result = await importNonMessages(stagingDir, options);
-        await importConversations(stagingDir, Object.assign({}, options));
+        await importConversations(stagingDir, { ...options });
 
         window.log.info('Done importing from backup!');
         return result;

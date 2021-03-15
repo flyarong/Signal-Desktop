@@ -1,3 +1,6 @@
+// Copyright 2019-2020 Signal Messenger, LLC
+// SPDX-License-Identifier: AGPL-3.0-only
+
 import * as React from 'react';
 import { StickerPackInstallButton } from './StickerPackInstallButton';
 import { ConfirmationModal } from '../ConfirmationModal';
@@ -15,7 +18,6 @@ export type OwnProps = {
 export type Props = OwnProps;
 
 export const StickerManagerPackRow = React.memo(
-  // tslint:disable-next-line max-func-body-length
   ({
     installStickerPack,
     uninstallStickerPack,
@@ -26,12 +28,9 @@ export const StickerManagerPackRow = React.memo(
     const { id, key, isBlessed } = pack;
     const [uninstalling, setUninstalling] = React.useState(false);
 
-    const clearUninstalling = React.useCallback(
-      () => {
-        setUninstalling(false);
-      },
-      [setUninstalling]
-    );
+    const clearUninstalling = React.useCallback(() => {
+      setUninstalling(false);
+    }, [setUninstalling]);
 
     const handleInstall = React.useCallback(
       (e: React.MouseEvent) => {
@@ -40,7 +39,7 @@ export const StickerManagerPackRow = React.memo(
           installStickerPack(id, key);
         }
       },
-      [installStickerPack, pack]
+      [id, installStickerPack, key]
     );
 
     const handleUninstall = React.useCallback(
@@ -52,22 +51,37 @@ export const StickerManagerPackRow = React.memo(
           setUninstalling(true);
         }
       },
-      [setUninstalling, id, key, isBlessed]
+      [id, isBlessed, key, setUninstalling, uninstallStickerPack]
     );
 
-    const handleConfirmUninstall = React.useCallback(
-      () => {
-        clearUninstalling();
-        if (uninstallStickerPack) {
-          uninstallStickerPack(id, key);
+    const handleConfirmUninstall = React.useCallback(() => {
+      clearUninstalling();
+      if (uninstallStickerPack) {
+        uninstallStickerPack(id, key);
+      }
+    }, [id, key, clearUninstalling, uninstallStickerPack]);
+
+    const handleKeyDown = React.useCallback(
+      (event: React.KeyboardEvent) => {
+        if (
+          onClickPreview &&
+          (event.key === 'Enter' || event.key === 'Space')
+        ) {
+          event.stopPropagation();
+          event.preventDefault();
+
+          onClickPreview(pack);
         }
       },
-      [id, key, clearUninstalling]
+      [onClickPreview, pack]
     );
 
     const handleClickPreview = React.useCallback(
-      () => {
+      (event: React.MouseEvent) => {
         if (onClickPreview) {
+          event.stopPropagation();
+          event.preventDefault();
+
           onClickPreview(pack);
         }
       },
@@ -80,14 +94,22 @@ export const StickerManagerPackRow = React.memo(
           <ConfirmationModal
             i18n={i18n}
             onClose={clearUninstalling}
-            negativeText={i18n('stickers--StickerManager--Uninstall')}
-            onNegative={handleConfirmUninstall}
+            actions={[
+              {
+                style: 'negative',
+                text: i18n('stickers--StickerManager--Uninstall'),
+                action: handleConfirmUninstall,
+              },
+            ]}
           >
             {i18n('stickers--StickerManager--UninstallWarning')}
           </ConfirmationModal>
         ) : null}
         <div
+          tabIndex={0}
+          // This can't be a button because we have buttons as descendants
           role="button"
+          onKeyDown={handleKeyDown}
           onClick={handleClickPreview}
           className="module-sticker-manager__pack-row"
         >
@@ -114,7 +136,7 @@ export const StickerManagerPackRow = React.memo(
           <div className="module-sticker-manager__pack-row__controls">
             {pack.status === 'installed' ? (
               <StickerPackInstallButton
-                installed={true}
+                installed
                 i18n={i18n}
                 onClick={handleUninstall}
               />

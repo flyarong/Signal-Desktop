@@ -2,7 +2,6 @@ node_modules
 .sass-cache
 coverage/*
 build/curve25519_compiled.js
-build/icons/*
 stylesheets/*.css.map
 /dist
 .DS_Store
@@ -13,7 +12,8 @@ release/
 /dev-app-update.yml
 .nyc_output/
 *.sublime*
-sql/
+/sql/
+/start.sh
 
 # generated files
 js/components.js
@@ -27,3 +27,12 @@ test/test.js
 # React / TypeScript
 ts/**/*.js
 ts/protobuf/*.d.ts
+sticker-creator/**/*.js
+
+# CSS Modules
+**/*.scss.d.ts
+
+# Sticker Creator
+sticker-creator/dist/*
+
+/.idea

@@ -1,16 +1,15 @@
+// Copyright 2014-2020 Signal Messenger, LLC
+// SPDX-License-Identifier: AGPL-3.0-only
+
 /* global
   ConversationController,
-  extension,
-  getInboxCollection,
   i18n,
   Whisper,
   Signal
 */
 
 // eslint-disable-next-line func-names
-(function() {
-  'use strict';
-
+(function () {
   window.Whisper = window.Whisper || {};
 
   Whisper.StickerPackInstallFailedToast = Whisper.ToastView.extend({
@@ -34,7 +33,7 @@
         );
         view.$el.appendTo(this.el);
 
-        if (this.lastConversation) {
+        if (this.lastConversation && this.lastConversation !== conversation) {
           this.lastConversation.trigger(
             'unload',
             'opened another conversation'
@@ -65,7 +64,7 @@
     className: 'app-loading-screen',
     updateProgress(count) {
       if (count > 0) {
-        const message = i18n('loadingMessages', count.toString());
+        const message = i18n('loadingMessages', [count.toString()]);
         this.$('.message').text(message);
       }
     },
@@ -80,11 +79,17 @@
     initialize(options = {}) {
       this.ready = false;
       this.render();
-      this.$el.attr('tabindex', '1');
 
       this.conversation_stack = new Whisper.ConversationStack({
         el: this.$('.conversation-stack'),
         model: { window: options.window },
+      });
+
+      Whisper.events.on('refreshConversation', ({ oldId, newId }) => {
+        const convo = this.conversation_stack.lastConversation;
+        if (convo && convo.get('id') === oldId) {
+          this.conversation_stack.open(newId);
+        }
       });
 
       if (!options.initialLoadComplete) {
@@ -94,25 +99,7 @@
         this.startConnectionListener();
       } else {
         this.setupLeftPane();
-      }
-
-      const inboxCollection = getInboxCollection();
-
-      this.listenTo(inboxCollection, 'messageError', () => {
-        if (this.networkStatusView) {
-          this.networkStatusView.update();
-        }
-      });
-
-      this.networkStatusView = new Whisper.NetworkStatusView();
-      this.$el
-        .find('.network-status-container')
-        .append(this.networkStatusView.render().el);
-
-      if (extension.expired()) {
-        const banner = new Whisper.ExpiredAlertBanner().render();
-        banner.$el.prependTo(this.$el);
-        this.$el.addClass('expired');
+        this.setupCallManagerUI();
       }
 
       Whisper.events.on('pack-install-failed', () => {
@@ -127,6 +114,16 @@
     },
     events: {
       click: 'onClick',
+    },
+    setupCallManagerUI() {
+      if (this.callManagerView) {
+        return;
+      }
+      this.callManagerView = new Whisper.ReactWrapperView({
+        className: 'call-manager-wrapper',
+        JSX: Signal.State.Roots.createCallManager(window.reduxStore),
+      });
+      this.$('.call-manager-placeholder').append(this.callManagerView.el);
     },
     setupLeftPane() {
       if (this.leftPaneView) {
@@ -158,7 +155,9 @@
             this.onEmpty();
             break;
           default:
-            // We also replicate empty here
+            window.log.warn(
+              'startConnectionListener: Found unexpected socket status; calling onEmpty() manually.'
+            );
             this.onEmpty();
             break;
         }
@@ -166,11 +165,19 @@
     },
     onEmpty() {
       this.setupLeftPane();
+      this.setupCallManagerUI();
 
       const view = this.appLoadingScreen;
       if (view) {
         this.appLoadingScreen = null;
         view.remove();
+
+        const searchInput = document.querySelector(
+          '.module-main-header__search__input'
+        );
+        if (searchInput && searchInput.focus) {
+          searchInput.focus();
+        }
       }
     },
     onProgress(count) {
@@ -201,6 +208,8 @@
         'private'
       );
 
+      conversation.setMarkedUnread(false);
+
       const { openConversationExternal } = window.reduxActions.conversations;
       if (openConversationExternal) {
         openConversationExternal(id, messageId);
@@ -217,17 +226,6 @@
     },
     onClick(e) {
       this.closeRecording(e);
-    },
-  });
-
-  Whisper.ExpiredAlertBanner = Whisper.View.extend({
-    templateName: 'expired_alert',
-    className: 'expiredAlert clearfix',
-    render_attributes() {
-      return {
-        expiredWarning: i18n('expiredWarning'),
-        upgrade: i18n('upgrade'),
-      };
     },
   });
 })();

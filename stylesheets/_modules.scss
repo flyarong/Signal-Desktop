@@ -1,9 +1,52 @@
+// Copyright 2018-2021 Signal Messenger, LLC
+// SPDX-License-Identifier: AGPL-3.0-only
+
 // Using BEM syntax explained here: https://csswizardry.com/2013/01/mindbemding-getting-your-head-round-bem-syntax/
 
-// Module: Contact Name
+.module-title-bar-drag-area {
+  -webkit-app-region: drag;
+  height: var(--title-bar-drag-area-height);
+  left: 0;
+  position: fixed;
+  top: 0;
+  width: 100%;
+  z-index: 999;
+}
 
-.module-contact-name__profile-name {
-  font-style: italic;
+.module-splash-screen {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+}
+
+.module-splash-screen__logo {
+  @include color-svg('../images/signal-logo.svg', $color-white);
+  margin: 24px auto;
+
+  &.module-img--256 {
+    height: 256px;
+    width: 256px;
+  }
+
+  &.module-img--200 {
+    height: 200px;
+    width: 200px;
+  }
+
+  &.module-img--150 {
+    height: 150px;
+    width: 150px;
+  }
+
+  &.module-img--128 {
+    height: 128px;
+    width: 128px;
+  }
+
+  &.module-logo-blue {
+    background-color: $ultramarine-brand-light;
+  }
 }
 
 // Module: Message
@@ -11,6 +54,9 @@
 // Note: this does the same thing as module-timeline__message-container but
 //   can be used outside tht Timeline contact more easily.
 .module-message-container {
+  @include button-reset;
+
+  cursor: inherit;
   width: 100%;
   margin-top: 4px;
   margin-bottom: 4px;
@@ -30,6 +76,8 @@
   display: inline-flex;
   flex-direction: row;
   align-items: stretch;
+
+  outline: none;
 }
 
 .module-message--expired {
@@ -65,10 +113,6 @@
   margin-left: 32px;
 }
 
-.module-message--incoming.module-message--group {
-  margin-left: 52px;
-}
-
 .module-message__buttons {
   position: absolute;
   top: 0;
@@ -85,9 +129,12 @@
 
 .module-message__buttons--incoming {
   left: 100%;
+  padding-left: 8px;
 }
 .module-message__buttons--outgoing {
   right: 100%;
+  padding-right: 8px;
+  flex-direction: row-reverse;
 }
 
 .module-message__buttons__download {
@@ -112,6 +159,37 @@
     &:hover {
       @include color-svg(
         '../images/icons/v2/save-solid-24.svg',
+        $color-gray-02
+      );
+    }
+  }
+}
+
+.module-message__buttons__react {
+  height: 24px;
+  width: 24px;
+  display: inline-block;
+  cursor: pointer;
+  @include light-theme {
+    @include color-svg(
+      '../images/icons/v2/add-emoji-outline-24.svg',
+      $color-gray-45
+    );
+    &:hover {
+      @include color-svg(
+        '../images/icons/v2/add-emoji-outline-24.svg',
+        $color-gray-90
+      );
+    }
+  }
+  @include dark-theme {
+    @include color-svg(
+      '../images/icons/v2/add-emoji-outline-24.svg',
+      $color-gray-45
+    );
+    &:hover {
+      @include color-svg(
+        '../images/icons/v2/add-emoji-outline-24.svg',
         $color-gray-02
       );
     }
@@ -195,7 +273,7 @@
 }
 
 .module-message__error-container {
-  width: 28px;
+  min-width: 28px;
   position: relative;
 }
 
@@ -228,6 +306,11 @@
   right: 8px;
 }
 
+.module-message__container-outer {
+  line-height: 0;
+  display: flex;
+  flex-direction: column;
+}
 .module-message__container {
   position: relative;
   display: inline-block;
@@ -237,6 +320,7 @@
   padding-top: 10px;
   padding-bottom: 10px;
   min-width: 0px;
+  overflow: hidden;
 
   @include light-theme {
     border: 1px solid $color-white;
@@ -247,7 +331,53 @@
   }
 }
 
+// This is the component we put the outline around when the whole message is selected
+.module-message--selected .module-message__container {
+  @include mouse-mode {
+    animation: message--mouse-selected 1s $ease-out-expo;
+  }
+}
+.module-message:focus .module-message__container {
+  @include keyboard-mode {
+    box-shadow: 0 0 0 3px $ultramarine-ui-light;
+  }
+}
+
+@keyframes message--mouse-selected {
+  0% {
+    box-shadow: 0 0 0 5px transparent;
+  }
+  10% {
+    box-shadow: 0 0 0 5px $ultramarine-ui-light;
+  }
+  70% {
+    box-shadow: 0 0 0 5px $ultramarine-ui-light;
+  }
+  100% {
+    box-shadow: 0 0 0 5px transparent;
+  }
+}
+
+// We disable this highlight for messages with stickers, instead highlighting the sticker
+.module-message--selected .module-message__container--with-sticker {
+  @include mouse-mode {
+    animation: none;
+  }
+}
+.module-message:focus .module-message__container--with-sticker {
+  @include keyboard-mode {
+    box-shadow: none;
+  }
+}
+
 .module-message__container--with-sticker {
+  @include light-theme {
+    border: none;
+  }
+
+  @include dark-theme {
+    border: none;
+  }
   padding-bottom: 0px;
 }
 
@@ -259,32 +389,12 @@
     background-color: $color-gray-75;
   }
   @include ios-theme {
-    background-color: $color-signal-blue;
+    background-color: $ultramarine-ui-light;
     color: $color-white;
   }
   @include ios-dark-theme {
-    background-color: $color-signal-blue;
+    background-color: $ultramarine-ui-light;
     color: $color-gray-05;
-  }
-}
-
-.module-message__container--selected {
-  // cubic-bezier taken from https://easings.net/en#easeOutExpo
-  animation: message--selected 1s cubic-bezier(0.19, 1, 0.22, 1);
-}
-
-@keyframes message--selected {
-  0% {
-    box-shadow: 0 0 0 5px transparent;
-  }
-  10% {
-    box-shadow: 0 0 0 5px $color-signal-blue;
-  }
-  70% {
-    box-shadow: 0 0 0 5px $color-signal-blue;
-  }
-  100% {
-    box-shadow: 0 0 0 5px transparent;
   }
 }
 
@@ -335,15 +445,13 @@
 }
 
 .module-message__container--with-tap-to-view-expired {
-  cursor: default;
-
   @include light-theme {
     border: 1px solid $color-gray-15;
     background-color: $color-white;
   }
   @include dark-theme {
     border: 1px solid $color-gray-60;
-    background-color: $color-black;
+    background-color: $color-gray-95;
   }
   @include ios-theme {
     border: 1px solid $color-gray-15;
@@ -351,7 +459,7 @@
   }
   @include ios-dark-theme {
     border: 1px solid $color-gray-60;
-    background-color: $color-black;
+    background-color: $color-gray-95;
   }
 }
 
@@ -409,16 +517,16 @@
   height: 20px;
 
   @include light-theme {
-    @include color-svg('../images/icons/v2/play-solid-24.svg', $color-white);
+    @include color-svg('../images/icons/v2/view-once-24.svg', $color-white);
   }
   @include dark-theme {
-    @include color-svg('../images/icons/v2/play-solid-24.svg', $color-gray-05);
+    @include color-svg('../images/icons/v2/view-once-24.svg', $color-gray-05);
   }
   @include ios-theme {
-    @include color-svg('../images/icons/v2/play-solid-24.svg', $color-gray-90);
+    @include color-svg('../images/icons/v2/view-once-24.svg', $color-gray-90);
   }
   @include ios-dark-theme {
-    @include color-svg('../images/icons/v2/play-solid-24.svg', $color-gray-05);
+    @include color-svg('../images/icons/v2/view-once-24.svg', $color-gray-05);
   }
 }
 .module-message__tap-to-view__icon--outgoing {
@@ -434,28 +542,16 @@
 }
 .module-message__tap-to-view__icon--expired {
   @include light-theme {
-    @include color-svg(
-      '../images/icons/v2/play-outline-24.svg',
-      $color-gray-75
-    );
+    @include color-svg('../images/icons/v2/viewed-once-24.svg', $color-gray-75);
   }
   @include dark-theme {
-    @include color-svg(
-      '../images/icons/v2/play-outline-24.svg',
-      $color-gray-05
-    );
+    @include color-svg('../images/icons/v2/viewed-once-24.svg', $color-gray-05);
   }
   @include ios-theme {
-    @include color-svg(
-      '../images/icons/v2/play-outline-24.svg',
-      $color-gray-75
-    );
+    @include color-svg('../images/icons/v2/viewed-once-24.svg', $color-gray-75);
   }
   @include ios-dark-theme {
-    @include color-svg(
-      '../images/icons/v2/play-outline-24.svg',
-      $color-gray-05
-    );
+    @include color-svg('../images/icons/v2/viewed-once-24.svg', $color-gray-05);
   }
 }
 .module-message__tap-to-view__text {
@@ -530,6 +626,8 @@
   text-align: center;
   position: relative;
 
+  // These should match the paddings from .module-message__container,
+  // effectively "undoing" that padding.
   margin: {
     left: -12px;
     right: -12px;
@@ -538,6 +636,7 @@
   }
 
   border-radius: 16px;
+  line-height: 0;
   overflow: hidden;
 
   @include light-theme {
@@ -600,9 +699,19 @@
 }
 
 .module-message__generic-attachment {
+  @include button-reset;
+
+  width: 100%;
+
   display: flex;
   flex-direction: row;
   align-items: center;
+
+  @include keyboard-mode {
+    &:focus {
+      box-shadow: 0px 0px 0px 2px $ultramarine-ui-light;
+    }
+  }
 }
 
 .module-message__generic-attachment--with-content-below {
@@ -611,6 +720,11 @@
 
 .module-message__generic-attachment--with-content-above {
   padding-top: 4px;
+}
+
+.module-message__generic-attachment--not-active {
+  cursor: default;
+  pointer-events: none;
 }
 
 .module-message__generic-attachment__icon-container {
@@ -745,45 +859,48 @@
 }
 
 .module-message__link-preview {
-  cursor: pointer;
+  @include button-reset;
+
+  &--nonclickable {
+    cursor: inherit;
+    .module-image__image {
+      cursor: inherit;
+    }
+  }
+
+  display: block;
+
   margin-left: -12px;
   margin-right: -12px;
+  width: calc(100% + 24px);
+
   margin-top: -10px;
   margin-bottom: 5px;
-  border-top-left-radius: 16px;
-  border-top-right-radius: 16px;
   overflow: hidden;
+
+  @include keyboard-mode {
+    &:focus {
+      box-shadow: 0px 0px 0px 2px $ultramarine-ui-light;
+    }
+  }
 }
 
 .module-message__link-preview--with-content-above {
   margin-top: 4px;
-  border-top-left-radius: 0px;
-  border-top-right-radius: 0px;
 }
 
 .module-message__link-preview__content {
-  padding: 8px;
-  border-top-left-radius: 16px;
-  border-top-right-radius: 16px;
-  background-color: $color-white;
+  padding: 8px 12px;
   display: flex;
   flex-direction: row;
   align-items: flex-start;
 
   @include light-theme {
-    border: 1px solid $color-black-alpha-20;
+    background-color: $color-gray-02;
   }
   @include dark-theme {
-    background-color: $color-gray-95;
-    border: 1px solid $color-gray-60;
+    background-color: $color-gray-80;
   }
-}
-
-.module-message__link-preview__content--with-content-above {
-  border-top: none;
-  border-bottom: none;
-  border-top-left-radius: 0px;
-  border-top-right-radius: 0px;
 }
 
 .module-message__link-preview__icon_container {
@@ -812,11 +929,29 @@
   }
 }
 
-.module-message__link-preview__location {
+.module-message__link-preview__description {
   @include font-body-2;
 
-  margin-top: 4px;
-  text-transform: uppercase;
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-line-clamp: 5;
+  -webkit-box-orient: vertical;
+
+  @include light-theme {
+    color: $color-gray-90;
+  }
+  @include dark-theme {
+    color: $color-gray-05;
+  }
+}
+
+.module-message__link-preview__footer {
+  @include font-body-2;
+
+  display: flex;
+  flex-flow: row wrap;
+  align-items: center;
+  margin-top: 2px;
 
   @include light-theme {
     color: $color-gray-60;
@@ -824,6 +959,21 @@
   @include dark-theme {
     color: $color-gray-25;
   }
+
+  > *:not(:first-child) {
+    display: flex;
+
+    &:before {
+      content: '•';
+      font-size: 50%;
+      margin-left: 0.2rem;
+      margin-right: 0.2rem;
+    }
+  }
+}
+
+.module-message__link-preview__location {
+  text-transform: lowercase;
 }
 
 .module-message__author {
@@ -921,18 +1071,36 @@
 
   a {
     text-decoration: underline;
+    outline: none;
 
     @include light-theme {
       color: $color-gray-90;
     }
+    @include keyboard-mode {
+      &:focus {
+        outline: 1px solid $color-gray-90;
+      }
+    }
+
     @include dark-theme {
       color: $color-gray-05;
     }
+    @include dark-keyboard-mode {
+      &:focus {
+        outline: 1px solid $color-gray-05;
+      }
+    }
+
     @include ios-theme {
       color: $color-white-alpha-90;
     }
     @include ios-dark-theme {
       color: $color-white-alpha-90;
+    }
+    @include ios-keyboard-mode {
+      &:focus {
+        outline: 1px solid $color-white-alpha-90;
+      }
     }
   }
 }
@@ -953,18 +1121,42 @@
 
   a {
     text-decoration: underline;
+    outline: none;
 
     @include light-theme {
       color: $color-white;
     }
-    @include ios-theme {
-      color: $color-gray-90;
+    @include keyboard-mode {
+      &:focus {
+        outline: 1px solid $color-white;
+      }
     }
+
     @include dark-theme {
       color: $color-white-alpha-90;
     }
+    @include dark-keyboard-mode {
+      &:focus {
+        outline: 1px solid $color-white-alpha-90;
+      }
+    }
+
+    @include ios-theme {
+      color: $color-gray-90;
+    }
+    @include ios-keyboard-mode {
+      &:focus {
+        outline: 1px solid $color-gray-90;
+      }
+    }
+
     @include ios-dark-theme {
       color: $color-gray-05;
+    }
+    @include dark-ios-keyboard-mode {
+      &:focus {
+        outline: 1px solid $color-gray-05;
+      }
     }
   }
 }
@@ -979,6 +1171,14 @@
   align-items: center;
   margin-top: 3px;
   margin-bottom: -3px;
+
+  &--outgoing {
+    justify-content: flex-end;
+  }
+
+  &--with-reactions {
+    margin-bottom: -2px;
+  }
 }
 
 // With an image and no caption, this section needs to be on top of the image overlay
@@ -991,6 +1191,9 @@
   // Because this is absolutely positioned, we 100% is too big, take it down by parent
   //   padding sizes.
   padding-right: 24px;
+
+  // This is so all clicks go right through to the underlying image.
+  pointer-events: none;
 }
 
 .module-message__metadata__date {
@@ -1008,6 +1211,9 @@
   @include ios-dark-theme {
     color: $color-white-alpha-80;
   }
+}
+.module-message__metadata__tapable {
+  @include button-reset;
 }
 .module-message__metadata__date--incoming {
   color: $color-white-alpha-80;
@@ -1030,17 +1236,25 @@
     color: $color-white;
   }
 }
-.module-message__metadata__date--incoming-with-tap-to-view-expired {
+.module-message__metadata__date.module-message__metadata__date--incoming-with-tap-to-view-expired {
   color: $color-gray-75;
+
+  @include dark-theme {
+    color: $color-white-alpha-80;
+  }
 }
+.module-message__metadata__date.module-message__metadata__date--outgoing-with-tap-to-view-expired {
+  color: $color-gray-75;
+
+  @include dark-theme {
+    color: $color-white-alpha-80;
+  }
+}
+
 .module-message__metadata__date--with-sticker {
   @include ios-theme {
     color: $color-gray-60;
   }
-}
-
-.module-message__metadata__spacer {
-  flex-grow: 1;
 }
 
 .module-message__metadata__status-icon {
@@ -1061,7 +1275,7 @@
     @include color-svg('../images/sending.svg', $color-white-alpha-80);
   }
   @include ios-theme {
-    @include color-svg('../images/sending.svg', $color-gray-60);
+    @include color-svg('../images/sending.svg', $color-white);
   }
   @include ios-dark-theme {
     @include color-svg('../images/sending.svg', $color-white);
@@ -1159,7 +1373,9 @@
 }
 
 .module-message__send-message-button {
-  cursor: pointer;
+  @include button-reset;
+
+  width: calc(100% + 24px);
 
   @include font-body-2-bold;
 
@@ -1175,21 +1391,48 @@
   border-bottom-right-radius: 16px;
 
   @include light-theme {
-    color: $color-signal-blue;
+    color: $ultramarine-ui-light;
     background-color: $color-gray-02;
     border: 1px solid $color-black-alpha-20;
   }
   @include dark-theme {
-    color: $color-signal-blue;
+    color: $ultramarine-ui-dark;
     background-color: $color-gray-75;
     border: 1px solid $color-gray-45;
+  }
+
+  @include keyboard-mode {
+    &:focus {
+      box-shadow: 0px 0px 0px 2px $ultramarine-ui-light;
+    }
+  }
+}
+
+.module-message__author-avatar-container {
+  align-items: flex-end;
+  display: flex;
+  justify-content: center;
+  margin-right: 8px;
+
+  &--with-reactions {
+    padding-bottom: 12px;
   }
 }
 
 .module-message__author-avatar {
-  position: absolute;
-  bottom: 0px;
-  right: calc(100% + 8px);
+  @include button-reset;
+
+  cursor: pointer;
+
+  &:focus {
+    outline: none;
+
+    .module-avatar {
+      @include keyboard-mode {
+        box-shadow: 0 0 0 3px $ultramarine-ui-light;
+      }
+    }
+  }
 }
 
 .module-message__typing-container {
@@ -1198,6 +1441,106 @@
   display: flex;
   flex-direction: row;
   align-items: center;
+}
+
+.module-message__reactions {
+  position: relative;
+  z-index: 2;
+  height: 22px;
+  display: flex;
+
+  &--incoming {
+    align-self: flex-end;
+    padding-right: 8px;
+    margin-left: 8px;
+  }
+  &--outgoing {
+    align-self: flex-start;
+    padding-left: 8px;
+    margin-right: 8px;
+  }
+}
+
+.module-message__reactions__reaction {
+  @include button-reset;
+
+  min-width: 28px;
+  height: 22px;
+  border: 1px solid;
+  border-radius: 33px;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+
+  &--with-count {
+    min-width: 40px;
+  }
+
+  &__count {
+    @include font-caption-bold;
+
+    margin-left: 4px;
+
+    &--no-emoji {
+      margin-left: 0px;
+    }
+
+    @include light-theme {
+      color: $color-gray-60;
+    }
+
+    @include dark-theme {
+      color: $color-gray-25;
+    }
+
+    &--is-me {
+      @include light-theme {
+        color: $color-gray-75;
+      }
+
+      @include dark-theme {
+        color: $color-gray-15;
+      }
+
+      @include ios-theme {
+        color: $color-white-alpha-90;
+      }
+    }
+  }
+
+  &:focus {
+    outline: none;
+  }
+
+  @include keyboard-mode {
+    &:focus {
+      box-shadow: 0px 0px 0px 2px $ultramarine-ui-light;
+    }
+  }
+
+  @include light-theme() {
+    border-color: $color-white;
+    background: $color-gray-05;
+  }
+
+  @include dark-theme() {
+    border-color: $color-gray-95;
+    background: $color-gray-75;
+  }
+
+  &--is-me {
+    @include light-theme() {
+      background: $color-gray-25;
+    }
+
+    @include dark-theme() {
+      background: $color-gray-45;
+    }
+
+    @include ios-theme() {
+      background: $color-accent-blue;
+    }
+  }
 }
 
 // Module: Expire Timer
@@ -1262,8 +1605,19 @@ $timer-icons: '55', '50', '45', '40', '35', '30', '25', '20', '15', '10', '05',
     background-color: $color-gray-25;
   }
 }
-.module-expire-timer--incoming-with-tap-to-view-expired {
+.module-expire-timer.module-expire-timer--incoming-with-tap-to-view-expired {
   background-color: $color-gray-75;
+
+  @include dark-theme {
+    background-color: $color-white-alpha-80;
+  }
+}
+.module-expire-timer.module-expire-timer--outgoing-with-tap-to-view-expired {
+  background-color: $color-gray-75;
+
+  @include dark-theme {
+    background-color: $color-white-alpha-80;
+  }
 }
 .module-expire-timer--with-sticker {
   @include ios-theme {
@@ -1274,6 +1628,9 @@ $timer-icons: '55', '50', '45', '40', '35', '30', '25', '20', '15', '10', '05',
 // When status indicators are overlaid on top of an image, they use different colors
 .module-expire-timer--with-image-no-caption {
   @include light-theme {
+    background-color: $color-white;
+  }
+  @include ios-theme {
     background-color: $color-white;
   }
   @include dark-theme {
@@ -1297,15 +1654,14 @@ $timer-icons: '55', '50', '45', '40', '35', '30', '25', '20', '15', '10', '05',
 }
 
 .module-quote {
-  // To leave room for image thumbnail
-  min-height: 54px;
+  @include button-reset;
+  width: 100%;
 
   position: relative;
   border-radius: 4px;
   border-top-left-radius: 10px;
   border-top-right-radius: 10px;
 
-  cursor: pointer;
   display: flex;
   flex-direction: row;
   align-items: stretch;
@@ -1313,6 +1669,12 @@ $timer-icons: '55', '50', '45', '40', '35', '30', '25', '20', '15', '10', '05',
 
   border-left-width: 4px;
   border-left-style: solid;
+
+  @include keyboard-mode {
+    &:focus {
+      box-shadow: 0px 0px 0px 2px $ultramarine-ui-light;
+    }
+  }
 }
 
 .module-quote--no-click {
@@ -1338,14 +1700,36 @@ $timer-icons: '55', '50', '45', '40', '35', '30', '25', '20', '15', '10', '05',
     background-color: $color-conversation-grey-shade;
   }
 
-  // Note: both of these override all of the specific color classes below
-  @include ios-theme {
-    border-left-color: $color-white;
-    background-color: $color-white-alpha-60;
+  // To preserve contrast
+  @include ios-keyboard-mode {
+    &:focus {
+      box-shadow: 0px 0px 0px 2px $color-white;
+    }
   }
+
+  // Note: both of these override all of the specific color classes below
   @include ios-dark-theme {
+    background-color: $ultramarine-brand-dark;
     border-left-color: $color-black;
-    background-color: $color-conversation-blue-shade;
+  }
+  @include ios-theme {
+    background-color: $color-ios-blue-tint;
+    border-left-color: $color-white;
+  }
+}
+
+.module-composition-area__row {
+  .module-quote--outgoing {
+    border-left-style: solid;
+
+    @include ios-dark-theme {
+      background-color: $ultramarine-brand-dark;
+      border-left-color: $color-ios-blue-tint;
+    }
+    @include ios-theme {
+      background-color: $color-ios-blue-tint;
+      border-left-color: $ultramarine-ui-light;
+    }
   }
 }
 
@@ -1381,12 +1765,12 @@ $timer-icons: '55', '50', '45', '40', '35', '30', '25', '20', '15', '10', '05',
 
   // Note: both of these override all of the specific color classes below
   @include ios-theme {
-    background-color: $color-signal-blue-alpha-25;
-    border-left-color: $color-signal-blue;
+    background-color: $color-ios-blue-tint;
+    border-left-color: $ultramarine-ui-light;
   }
   @include ios-dark-theme {
-    background-color: $color-conversation-blue-shade;
-    border-left-color: $color-signal-blue;
+    background-color: $ultramarine-brand-dark;
+    border-left-color: $color-ios-blue-tint;
   }
 }
 @each $color, $value in $conversation-colors-tint {
@@ -1411,13 +1795,14 @@ $timer-icons: '55', '50', '45', '40', '35', '30', '25', '20', '15', '10', '05',
   padding-top: 7px;
   padding-bottom: 7px;
 
-  max-width: 100%;
+  // To leave room for image thumbnail
+  min-height: 54px;
 }
 
 .module-quote__primary__author {
   @include font-body-2-bold;
 
-  overflow-x: hidden;
+  overflow: hidden;
   white-space: nowrap;
   text-overflow: ellipsis;
 
@@ -1526,12 +1911,19 @@ $timer-icons: '55', '50', '45', '40', '35', '30', '25', '20', '15', '10', '05',
   border-radius: 50%;
 
   background-color: $color-black-alpha-40;
+
+  @include keyboard-mode {
+    &:focus-within {
+      background-color: $ultramarine-ui-light;
+    }
+  }
 }
 
 .module-quote__close-button {
+  @include button-reset;
+
   width: 14px;
   height: 14px;
-  cursor: pointer;
 
   position: absolute;
   left: 50%;
@@ -1543,17 +1935,12 @@ $timer-icons: '55', '50', '45', '40', '35', '30', '25', '20', '15', '10', '05',
 }
 
 .module-quote__icon-container {
-  flex: initial;
-  min-width: 54px;
-  width: 54px;
-  max-height: 54px;
+  background-position: center center;
+  background-repeat: no-repeat;
+  background-size: cover;
+  flex: 0 0 54px;
   position: relative;
-
-  img {
-    width: 100%;
-    height: 100%;
-    object-fit: cover;
-  }
+  width: 54px;
 }
 
 .module-quote__icon-container__inner {
@@ -1586,25 +1973,25 @@ $timer-icons: '55', '50', '45', '40', '35', '30', '25', '20', '15', '10', '05',
 }
 
 .module-quote__icon-container__icon--file {
-  @include color-svg('../images/file.svg', $color-signal-blue);
+  @include color-svg('../images/file.svg', $ultramarine-ui-light);
 }
 .module-quote__icon-container__icon--image {
-  @include color-svg('../images/image.svg', $color-signal-blue);
+  @include color-svg('../images/image.svg', $ultramarine-ui-light);
 }
 .module-quote__icon-container__icon--microphone {
   @include color-svg(
     '../images/icons/v2/mic-outline-24.svg',
-    $color-signal-blue
+    $ultramarine-ui-light
   );
 }
 .module-quote__icon-container__icon--play {
   @include color-svg(
     '../images/icons/v2/play-solid-24.svg',
-    $color-signal-blue
+    $ultramarine-ui-light
   );
 }
 .module-quote__icon-container__icon--movie {
-  @include color-svg('../images/movie.svg', $color-signal-blue);
+  @include color-svg('../images/movie.svg', $ultramarine-ui-light);
 }
 
 .module-quote__generic-file {
@@ -1648,6 +2035,7 @@ $timer-icons: '55', '50', '45', '40', '35', '30', '25', '20', '15', '10', '05',
 }
 
 .module-quote__reference-warning {
+  color: $color-gray-90;
   height: 26px;
   display: flex;
   flex-direction: row;
@@ -1659,18 +2047,24 @@ $timer-icons: '55', '50', '45', '40', '35', '30', '25', '20', '15', '10', '05',
   padding-right: 8px;
 
   background-color: $color-white-alpha-80;
+  @include dark-theme {
+    background-color: $color-white-alpha-20;
+  }
   @include ios-theme {
-    background-color: $color-signal-blue-tint-alpha-50;
+    background-color: $color-ios-ref-warning-light;
   }
   @include ios-dark-theme {
-    background-color: $color-white-alpha-40;
+    background-color: $color-ios-ref-warning-dark;
   }
 }
 
 .module-quote__reference-warning--incoming {
+  color: $color-gray-90;
+  @include ios-theme {
+    background-color: $color-ios-ref-warning-light;
+  }
   @include ios-dark-theme {
-    color: $color-gray-15;
-    background-color: $color-signal-blue-alpha-50;
+    background-color: $color-ios-ref-warning-dark;
   }
 }
 
@@ -1684,14 +2078,20 @@ $timer-icons: '55', '50', '45', '40', '35', '30', '25', '20', '15', '10', '05',
   @include dark-theme {
     @include color-svg('../images/icons/v2/link-broken-16.svg', $color-gray-25);
   }
+  @include ios-theme {
+    @include color-svg('../images/icons/v2/link-broken-16.svg', $color-gray-90);
+  }
   @include ios-dark-theme {
     @include color-svg('../images/icons/v2/link-broken-16.svg', $color-gray-90);
   }
 }
 
 .module-quote__reference-warning__icon--incoming {
+  @include ios-theme {
+    @include color-svg('../images/icons/v2/link-broken-16.svg', $color-gray-90);
+  }
   @include ios-dark-theme {
-    @include color-svg('../images/icons/v2/link-broken-16.svg', $color-gray-15);
+    @include color-svg('../images/icons/v2/link-broken-16.svg', $color-gray-90);
   }
 }
 
@@ -1713,18 +2113,70 @@ $timer-icons: '55', '50', '45', '40', '35', '30', '25', '20', '15', '10', '05',
 
 .module-quote__reference-warning__text--incoming {
   @include ios-dark-theme {
-    color: $color-gray-05;
+    color: $color-gray-90;
+  }
+}
+
+.module-about {
+  &__container {
+    margin-bottom: 8px;
+    margin-left: auto;
+    margin-right: auto;
+    max-width: 248px;
+    text-align: center;
+  }
+
+  &__text {
+    @include font-body-1;
+    @include light-theme {
+      color: $color-gray-60;
+    }
+    @include dark-theme {
+      color: $color-gray-25;
+    }
+    max-width: 400px;
+
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+    display: -webkit-box;
+    overflow: hidden;
+    text-overflow: ellipsis;
+
+    img.emoji {
+      height: 1em;
+      margin-right: 3px;
+      margin-bottom: 3px;
+      vertical-align: middle;
+      width: 1em;
+    }
   }
 }
 
 // Module: Embedded Contact
 
 .module-embedded-contact {
-  // Cursor is always a pointer because this component is always wired up to the contact detail screen
-  cursor: pointer;
+  @include button-reset;
+
+  width: 100%;
+  padding: 5px;
+
   display: flex;
   flex-direction: row;
   align-items: center;
+
+  @include keyboard-mode {
+    &:focus {
+      box-shadow: 0px 0px 0px 2px $ultramarine-ui-light;
+    }
+  }
+}
+
+.module-embedded-contact--outgoing {
+  @include ios-keyboard-mode {
+    &:focus {
+      box-shadow: 0px 0px 0px 2px $color-white;
+    }
+  }
 }
 
 .module-embedded-contact--with-content-above {
@@ -1834,10 +2286,10 @@ $timer-icons: '55', '50', '45', '40', '35', '30', '25', '20', '15', '10', '05',
 }
 
 .module-contact-detail__send-message {
-  cursor: pointer;
+  @include button-reset;
 
   border-radius: 4px;
-  background-color: $color-signal-blue;
+  background-color: $ultramarine-ui-light;
   display: inline-block;
   padding: 6px;
   margin-top: 20px;
@@ -1846,10 +2298,6 @@ $timer-icons: '55', '50', '45', '40', '35', '30', '25', '20', '15', '10', '05',
 
   flex-direction: column;
   align-items: center;
-
-  button {
-    @include button-reset;
-  }
 }
 
 .module-contact-detail__send-message__inner {
@@ -1897,12 +2345,29 @@ $timer-icons: '55', '50', '45', '40', '35', '30', '25', '20', '15', '10', '05',
   margin-bottom: 3px;
 }
 
+// Module: Inline Notification Wrapper
+
+.module-inline-notification-wrapper {
+  outline: none;
+  padding: 5px;
+
+  &:focus {
+    @include keyboard-mode {
+      background-color: $color-gray-02;
+    }
+    @include dark-keyboard-mode {
+      background-color: $color-gray-80;
+    }
+  }
+}
+
 // Module: Group Notification
 
 .module-group-notification {
-  margin-top: 14px;
   margin-left: 1em;
   margin-right: 1em;
+  margin-top: 5px;
+  margin-bottom: 5px;
 
   text-align: center;
 
@@ -1915,7 +2380,8 @@ $timer-icons: '55', '50', '45', '40', '35', '30', '25', '20', '15', '10', '05',
 }
 
 .module-group-notification__change {
-  margin-top: 10px;
+  margin-top: 2px;
+  margin-bottom: 2px;
 }
 
 .module-group-notification__contact {
@@ -1925,7 +2391,6 @@ $timer-icons: '55', '50', '45', '40', '35', '30', '25', '20', '15', '10', '05',
 // Module: Reset Session Notification
 
 .module-reset-session-notification {
-  margin-top: 14px;
   text-align: center;
 
   @include light-theme {
@@ -1939,7 +2404,6 @@ $timer-icons: '55', '50', '45', '40', '35', '30', '25', '20', '15', '10', '05',
 // Module: Safety Number Notification
 
 .module-safety-number-notification {
-  margin-top: 14px;
   text-align: center;
 }
 
@@ -1978,29 +2442,161 @@ $timer-icons: '55', '50', '45', '40', '35', '30', '25', '20', '15', '10', '05',
 }
 
 .module-safety-number-notification__button {
+  @include button-reset;
+
   @include font-body-2-bold;
 
   margin-top: 5px;
   display: inline-block;
-  cursor: pointer;
 
   padding: 12px;
   border-radius: 4px;
 
-  color: $color-signal-blue;
+  color: $ultramarine-ui-light;
 
   @include light-theme {
     background-color: $color-gray-02;
   }
+  @include keyboard-mode {
+    &:focus {
+      background-color: $color-gray-15;
+    }
+  }
+
   @include dark-theme {
     background-color: $color-gray-75;
+  }
+  @include dark-keyboard-mode {
+    &:focus {
+      background-color: $color-gray-60;
+    }
+  }
+}
+
+.module-message-calling--notification {
+  .module-message__metadata__date {
+    @include light-theme {
+      color: $color-gray-90;
+    }
+    @include dark-theme {
+      color: $color-gray-05;
+    }
+  }
+
+  &__button {
+    @include button-reset;
+    @include button-small;
+    @include button-green;
+    @include font-body-1-bold;
+
+    display: block;
+    margin: 0.5rem auto 0 auto;
+  }
+}
+
+.module-safety-number__bold-name {
+  font-weight: bold;
+}
+
+.module-message-calling {
+  &--audio {
+    text-align: center;
+
+    @include light-theme {
+      color: $color-gray-90;
+    }
+    @include dark-theme {
+      color: $color-gray-05;
+    }
+  }
+
+  &--audio__icon {
+    height: 24px;
+    margin-bottom: 4px;
+    margin-left: auto;
+    margin-right: auto;
+    width: 24px;
+
+    @include light-theme {
+      @include color-svg(
+        '../images/icons/v2/phone-right-outline-24.svg',
+        $color-gray-75
+      );
+    }
+    @include dark-theme {
+      @include color-svg(
+        '../images/icons/v2/phone-right-outline-24.svg',
+        $color-gray-15
+      );
+    }
+  }
+
+  &--video {
+    text-align: center;
+
+    @include light-theme {
+      color: $color-gray-90;
+    }
+    @include dark-theme {
+      color: $color-gray-05;
+    }
+  }
+
+  &--video__icon {
+    height: 24px;
+    margin-bottom: 4px;
+    margin-left: auto;
+    margin-right: auto;
+    width: 24px;
+
+    @include light-theme {
+      @include color-svg(
+        '../images/icons/v2/video-outline-24.svg',
+        $color-gray-75
+      );
+    }
+    @include dark-theme {
+      @include color-svg(
+        '../images/icons/v2/video-outline-24.svg',
+        $color-gray-15
+      );
+    }
+  }
+}
+
+.module-message-unsynced {
+  padding-bottom: 24px;
+  text-align: center;
+
+  @include light-theme {
+    color: $color-gray-60;
+  }
+  @include dark-theme {
+    color: $color-gray-25;
+  }
+}
+
+.module-message-unsynced__icon {
+  height: 24px;
+  margin-bottom: 4px;
+  margin-left: auto;
+  margin-right: auto;
+  width: 24px;
+
+  @include light-theme {
+    @include color-svg(
+      '../images/icons/v2/info-outline-24.svg',
+      $color-gray-60
+    );
+  }
+  @include dark-theme {
+    @include color-svg('../images/icons/v2/info-solid-24.svg', $color-gray-25);
   }
 }
 
 // Module: Verification Notification
 
 .module-verification-notification {
-  margin-top: 14px;
   text-align: center;
 
   @include light-theme {
@@ -2053,14 +2649,13 @@ $timer-icons: '55', '50', '45', '40', '35', '30', '25', '20', '15', '10', '05',
 // Module: Timer Notification
 
 .module-timer-notification {
-  margin-top: 14px;
   text-align: center;
 
   @include light-theme {
     color: $color-gray-60;
   }
   @include dark-theme {
-    color: $color-gray-25;
+    color: $color-gray-05;
   }
 }
 
@@ -2082,7 +2677,7 @@ $timer-icons: '55', '50', '45', '40', '35', '30', '25', '20', '15', '10', '05',
     @include color-svg('../images/icons/v2/timer-24.svg', $color-gray-60);
   }
   @include dark-theme {
-    @include color-svg('../images/icons/v2/timer-24.svg', $color-gray-25);
+    @include color-svg('../images/icons/v2/timer-24.svg', $color-gray-05);
   }
 }
 
@@ -2096,7 +2691,7 @@ $timer-icons: '55', '50', '45', '40', '35', '30', '25', '20', '15', '10', '05',
   @include dark-theme {
     @include color-svg(
       '../images/icons/v2/timer-disabled-24.svg',
-      $color-gray-25
+      $color-gray-05
     );
   }
 }
@@ -2122,17 +2717,43 @@ $timer-icons: '55', '50', '45', '40', '35', '30', '25', '20', '15', '10', '05',
 // Module: Contact List Item
 
 .module-contact-list-item {
-  padding-top: 8px;
-  padding-bottom: 8px;
+  @include button-reset;
+
+  cursor: inherit;
+
+  padding: 8px;
+  width: 100%;
+
   display: flex;
   flex-direction: row;
   align-items: center;
 
   @include light-theme {
     color: $color-gray-60;
+
+    @include mouse-mode {
+      &:hover {
+        background-color: $color-gray-02;
+      }
+    }
+    @include keyboard-mode {
+      &:focus {
+        background-color: $color-gray-02;
+      }
+    }
   }
   @include dark-theme {
     color: $color-gray-15;
+  }
+  @include dark-mouse-mode {
+    &:hover {
+      background-color: $color-gray-80;
+    }
+  }
+  @include dark-keyboard-mode {
+    &:focus {
+      background-color: $color-gray-80;
+    }
   }
 }
 
@@ -2142,10 +2763,27 @@ $timer-icons: '55', '50', '45', '40', '35', '30', '25', '20', '15', '10', '05',
 
 .module-contact-list-item__text {
   margin-left: 8px;
+
+  align-items: center;
+  display: flex;
+  flex-direction: row;
+
+  flex-grow: 1;
+  justify-content: space-between;
+}
+
+.module-contact-list-item__left {
+  flex: 1;
 }
 
 .module-contact-list-item__text__name {
-  @include font-body-2-bold;
+  @include font-body-1-bold;
+  @include light-theme {
+    color: $color-gray-90;
+  }
+  @include dark-theme {
+    color: $color-gray-05;
+  }
 }
 
 .module-contact-list-item__text__profile-name {
@@ -2175,16 +2813,57 @@ $timer-icons: '55', '50', '45', '40', '35', '30', '25', '20', '15', '10', '05',
   }
 }
 
+.module-contact-list-item__admin {
+  text-align: right;
+  height: 100%;
+
+  @include font-body-2;
+}
+
+// Module: In Contacts Icon
+
+.module-in-contacts-icon__icon {
+  display: inline-block;
+  height: 15px;
+  width: 15px;
+
+  margin-bottom: 2px;
+  vertical-align: middle;
+
+  @include light-theme {
+    @include color-svg(
+      '../images/icons/v2/profile-circle-outline-24.svg',
+      $color-gray-60
+    );
+  }
+  @include dark-theme {
+    @include color-svg(
+      '../images/icons/v2/profile-circle-outline-24.svg',
+      $color-gray-25
+    );
+  }
+
+  @include keyboard-mode {
+    &:focus {
+      @include color-svg(
+        '../images/icons/v2/profile-circle-outline-24.svg',
+        $ultramarine-ui-light
+      );
+    }
+  }
+}
+
 // Module: Conversation Header
 
 .module-conversation-header {
   padding-left: 16px;
   padding-right: 16px;
+  padding-top: var(--title-bar-drag-area-height);
   display: flex;
   flex-direction: row;
   align-items: center;
 
-  height: $header-height;
+  height: calc(#{$header-height} + var(--title-bar-drag-area-height));
 
   @include light-theme {
     color: $color-gray-90;
@@ -2197,16 +2876,18 @@ $timer-icons: '55', '50', '45', '40', '35', '30', '25', '20', '15', '10', '05',
 }
 
 .module-conversation-header__back-icon {
+  $transition: 250ms ease-out;
+
   display: inline-block;
   margin-left: -10px;
-  margin-right: -2px;
+  margin-right: -10px;
   width: 24px;
   height: 24px;
   min-width: 24px;
   vertical-align: text-bottom;
   border: none;
   opacity: 0;
-  transition: opacity 250ms ease-out;
+  transition: margin-right $transition, opacity $transition;
 
   &:disabled {
     cursor: default;
@@ -2214,6 +2895,7 @@ $timer-icons: '55', '50', '45', '40', '35', '30', '25', '20', '15', '10', '05',
 
   &--show {
     opacity: 1;
+    margin-right: 6px;
   }
 
   @include light-theme {
@@ -2236,8 +2918,7 @@ $timer-icons: '55', '50', '45', '40', '35', '30', '25', '20', '15', '10', '05',
   min-width: 0;
   display: block;
 
-  text-align: center;
-  height: 48px;
+  height: $header-height;
 }
 
 .module-conversation-header__title-flex {
@@ -2246,8 +2927,18 @@ $timer-icons: '55', '50', '45', '40', '35', '30', '25', '20', '15', '10', '05',
   display: inline-flex;
   flex-direction: row;
   align-items: center;
-  height: 48px;
+  height: $header-height;
   max-width: 100%;
+}
+
+.module-conversation-header__title-clickable {
+  cursor: pointer;
+
+  &:focus {
+    @include mouse-mode {
+      outline: none;
+    }
+  }
 }
 
 .module-conversation-header__note-to-self {
@@ -2257,8 +2948,8 @@ $timer-icons: '55', '50', '45', '40', '35', '30', '25', '20', '15', '10', '05',
 }
 
 .module-conversation-header__avatar {
-  min-width: 28px;
-  user-select: none;
+  min-width: 32px;
+  margin-right: 4px;
 }
 
 .module-conversation-header__title {
@@ -2267,8 +2958,6 @@ $timer-icons: '55', '50', '45', '40', '35', '30', '25', '20', '15', '10', '05',
 
   @include font-body-1-bold;
 
-  // width of avatar (28px) and our 6px left margin
-  max-width: calc(100% - 34px);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -2280,6 +2969,37 @@ $timer-icons: '55', '50', '45', '40', '35', '30', '25', '20', '15', '10', '05',
   }
   @include dark-theme {
     color: $color-gray-02;
+  }
+}
+
+.module-conversation-header__contacts-icon {
+  display: inline-block;
+  height: 15px;
+  width: 15px;
+
+  margin-bottom: 3px;
+  vertical-align: middle;
+
+  @include light-theme {
+    @include color-svg(
+      '../images/icons/v2/profile-circle-outline-24.svg',
+      $color-gray-60
+    );
+  }
+  @include dark-theme {
+    @include color-svg(
+      '../images/icons/v2/profile-circle-outline-24.svg',
+      $color-gray-25
+    );
+  }
+
+  @include keyboard-mode {
+    &:focus {
+      @include color-svg(
+        '../images/icons/v2/profile-circle-outline-24.svg',
+        $ultramarine-ui-light
+      );
+    }
   }
 }
 
@@ -2349,10 +3069,16 @@ $timer-icons: '55', '50', '45', '40', '35', '30', '25', '20', '15', '10', '05',
   }
 
   @include light-theme {
-    @include color-svg('../images/icons/v2/more-horiz-24.svg', $color-gray-75);
+    @include color-svg(
+      '../images/icons/v2/chevron-down-24.svg',
+      $color-gray-75
+    );
   }
   @include dark-theme {
-    @include color-svg('../images/icons/v2/more-horiz-24.svg', $color-gray-15);
+    @include color-svg(
+      '../images/icons/v2/chevron-down-24.svg',
+      $color-gray-15
+    );
   }
 }
 
@@ -2380,6 +3106,559 @@ $timer-icons: '55', '50', '45', '40', '35', '30', '25', '20', '15', '10', '05',
   }
 }
 
+.module-conversation-header__calling-button {
+  $icon-size: 24px;
+
+  margin-left: 12px;
+  border: none;
+  opacity: 0;
+  transition: opacity 250ms ease-out;
+
+  &:disabled {
+    cursor: default;
+  }
+
+  &--show {
+    opacity: 1;
+  }
+
+  &--video {
+    @include light-theme {
+      @include color-svg(
+        '../images/icons/v2/video-outline-24.svg',
+        $color-gray-75
+      );
+    }
+    @include dark-theme {
+      @include color-svg(
+        '../images/icons/v2/video-solid-24.svg',
+        $color-gray-15
+      );
+    }
+    height: $icon-size;
+    width: $icon-size;
+  }
+
+  &--audio {
+    @include light-theme {
+      @include color-svg(
+        '../images/icons/v2/phone-right-outline-24.svg',
+        $color-gray-75
+      );
+    }
+    @include dark-theme {
+      @include color-svg(
+        '../images/icons/v2/phone-right-solid-24.svg',
+        $color-gray-15
+      );
+    }
+    height: $icon-size;
+    width: $icon-size;
+  }
+
+  &--join {
+    @include font-body-1;
+    align-items: center;
+    background-color: $color-accent-green;
+    border-radius: 9999px; // This ensures the borders are completely rounded. (A value like 100% would make it an ellipse.)
+    color: $color-white;
+    display: flex;
+    outline: none;
+    padding: 5px 18px;
+
+    @include keyboard-mode {
+      &:focus {
+        box-shadow: 0px 0px 0px 4px $ultramarine-ui-light;
+      }
+    }
+
+    &:before {
+      @include color-svg('../images/icons/v2/video-solid-24.svg', $color-white);
+      content: '';
+      display: block;
+      height: $icon-size;
+      margin-right: 5px;
+      width: $icon-size;
+    }
+  }
+}
+
+// Module: Conversation Details
+
+.conversation-details-panel {
+  max-width: 750px;
+  margin: 0 auto;
+
+  @at-root .conversation #{&} {
+    overflow-y: auto;
+  }
+}
+
+// Brought this up here to add specificity
+button.module-conversation-details__action-button {
+  margin-left: 16px;
+}
+
+.module-conversation-details {
+  &-header {
+    &__root {
+      align-items: center;
+      display: flex;
+      flex-direction: column;
+      padding-bottom: 24px;
+      text-align: center;
+    }
+
+    &__title {
+      @include font-title-1;
+      padding-top: 12px;
+      padding-bottom: 8px;
+    }
+
+    &__subtitle {
+      @include font-body-1;
+      color: $color-gray-60;
+      padding-bottom: 6px;
+
+      @include dark-theme {
+        color: $color-gray-25;
+      }
+    }
+  }
+
+  &__leave-group {
+    color: $color-accent-red;
+  }
+
+  &__block-group {
+    color: $color-accent-red;
+  }
+
+  &__tabs {
+    display: flex;
+    justify-content: space-around;
+  }
+
+  &__tab {
+    @include font-body-1;
+    cursor: pointer;
+    padding: 15px;
+
+    &:focus {
+      @include mouse-mode {
+        outline: none;
+      }
+    }
+
+    &--selected {
+      @include font-body-1-bold;
+      border-bottom: 2px solid $color-black;
+    }
+  }
+
+  &__pending--info {
+    @include font-subtitle;
+    @include light-theme {
+      color: $color-gray-60;
+    }
+    @include dark-theme {
+      color: $color-gray-25;
+    }
+    padding: 0 28px;
+    padding-top: 16px;
+  }
+
+  &-icon {
+    &__button {
+      background: none;
+      border: none;
+      padding: none;
+
+      &:focus {
+        @include mouse-mode {
+          outline: none;
+        }
+      }
+    }
+
+    &__icon {
+      height: 32px;
+      width: 32px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+
+      &::after {
+        display: block;
+        content: '';
+        width: 24px;
+        height: 24px;
+        -webkit-mask-size: 100%;
+      }
+
+      &--timer {
+        &::after {
+          -webkit-mask: url(../images/icons/v2/timer-disabled-24.svg) no-repeat
+            center;
+
+          @include light-theme {
+            background-color: $color-gray-75;
+          }
+
+          @include dark-theme {
+            background-color: $color-gray-15;
+          }
+        }
+      }
+
+      &--lock {
+        &::after {
+          -webkit-mask: url(../images/icons/v2/lock-outline-24.svg) no-repeat
+            center;
+
+          @include light-theme {
+            background-color: $color-gray-75;
+          }
+
+          @include dark-theme {
+            background-color: $color-gray-15;
+          }
+        }
+      }
+
+      &--approve {
+        &::after {
+          -webkit-mask: url(../images/icons/v2/check-24.svg) no-repeat center;
+
+          @include light-theme {
+            background-color: $color-gray-75;
+          }
+
+          @include dark-theme {
+            background-color: $color-gray-15;
+          }
+        }
+      }
+
+      &--link {
+        &::after {
+          -webkit-mask: url(../images/icons/v2/link-16.svg) no-repeat center;
+
+          @include light-theme {
+            background-color: $color-gray-75;
+          }
+
+          @include dark-theme {
+            background-color: $color-gray-15;
+          }
+        }
+      }
+
+      &--share {
+        &::after {
+          -webkit-mask: url(../images/icons/v2/share-ios-24.svg) no-repeat
+            center;
+
+          @include light-theme {
+            background-color: $color-gray-75;
+          }
+
+          @include dark-theme {
+            background-color: $color-gray-15;
+          }
+        }
+      }
+
+      &--reset {
+        &::after {
+          -webkit-mask: url(../images/icons/v2/refresh-24.svg) no-repeat center;
+
+          @include light-theme {
+            background-color: $color-gray-75;
+          }
+
+          @include dark-theme {
+            background-color: $color-gray-15;
+          }
+        }
+      }
+
+      &--trash {
+        &::after {
+          -webkit-mask: url(../images/icons/v2/trash-outline-24.svg) no-repeat
+            center;
+
+          @include light-theme {
+            background-color: $color-gray-75;
+          }
+
+          @include dark-theme {
+            background-color: $color-gray-15;
+          }
+        }
+      }
+
+      &--invites {
+        &::after {
+          -webkit-mask: url(../images/icons/v2/pending-invite-24.svg) no-repeat
+            center;
+
+          @include light-theme {
+            background-color: $color-gray-75;
+          }
+
+          @include dark-theme {
+            background-color: $color-gray-15;
+          }
+        }
+      }
+
+      &--down {
+        border-radius: 18px;
+        @include light-theme {
+          background-color: $color-gray-02;
+        }
+
+        @include dark-theme {
+          background-color: $color-gray-90;
+        }
+
+        &::after {
+          -webkit-mask: url(../images/icons/v2/chevron-down-16.svg) no-repeat
+            center;
+
+          @include light-theme {
+            background-color: $color-gray-60;
+          }
+
+          @include dark-theme {
+            background-color: $color-gray-25;
+          }
+        }
+      }
+
+      &--leave {
+        &::after {
+          -webkit-mask: url(../images/icons/v2/leave-24.svg) no-repeat center;
+          background-color: $color-accent-red;
+        }
+      }
+
+      &--block {
+        &::after {
+          -webkit-mask: url(../images/icons/v2/block-24.svg) no-repeat center;
+          background-color: $color-accent-red;
+        }
+      }
+    }
+  }
+
+  &-media-list {
+    &__root {
+      display: flex;
+      justify-content: center;
+      padding: 0 20px;
+      padding-bottom: 24px;
+
+      .module-media-grid-item {
+        border-radius: 4px;
+        height: auto;
+        margin: 0 4px;
+        max-height: 94px;
+        overflow: hidden;
+        width: calc(100% / 6);
+
+        .module-media-grid-item__icon {
+          &::before {
+            content: '';
+            display: block;
+            padding-top: 100%;
+          }
+        }
+
+        .module-media-grid-item__image-container,
+        img {
+          margin: 0;
+        }
+      }
+    }
+
+    &__show-all {
+      background: none;
+      border: none;
+      padding: 0;
+
+      @include light-theme {
+        color: $color-gray-95;
+      }
+      @include dark-theme {
+        color: $color-gray-05;
+      }
+    }
+  }
+
+  &-panel-row {
+    &__root {
+      align-items: center;
+      display: flex;
+      padding: 16px 24px;
+      user-select: none;
+      width: 100%;
+
+      &--button {
+        color: inherit;
+        background: none;
+        border: none;
+      }
+
+      &:hover {
+        @include light-theme {
+          background-color: $color-gray-02;
+        }
+
+        @include dark-theme {
+          background-color: $color-gray-90;
+        }
+
+        & .module-conversation-details-panel-row__actions {
+          opacity: 1;
+        }
+      }
+    }
+
+    &__icon {
+      margin-right: 12px;
+      flex-shrink: 0;
+    }
+
+    &__label {
+      flex-grow: 1;
+      text-align: left;
+      margin-right: 12px;
+    }
+
+    &__info {
+      @include font-body-2;
+      color: $color-gray-60;
+      margin-top: 4px;
+    }
+
+    &__right {
+      color: $color-gray-45;
+    }
+
+    &__actions {
+      margin-left: 12px;
+      overflow: hidden;
+      opacity: 0;
+
+      &:focus-within {
+        opacity: 1;
+      }
+    }
+  }
+
+  &-panel-section {
+    &__root {
+      position: relative;
+
+      &:not(:first-child)::before {
+        border-top: 1px solid transparent;
+
+        @include light-theme {
+          border-top-color: $color-gray-15;
+        }
+
+        @include dark-theme {
+          border-top-color: $color-gray-65;
+        }
+
+        content: '';
+        display: block;
+        left: 0;
+        margin: 0;
+        position: absolute;
+        right: 0;
+        top: 0;
+      }
+
+      &--borderless {
+        &:not(:first-child)::before {
+          border-top: none;
+        }
+      }
+    }
+
+    &__header {
+      display: flex;
+      justify-content: space-between;
+      padding: 18px 24px 12px;
+
+      &--center {
+        justify-content: center;
+      }
+    }
+
+    &__title {
+      @include font-body-1-bold;
+    }
+  }
+
+  &-select {
+    position: relative;
+
+    select {
+      @include font-body-2;
+      -webkit-appearance: none;
+      border-radius: 4px;
+      border: 1px solid $color-gray-25;
+      cursor: pointer;
+      height: 40px;
+      min-width: 124px;
+      outline: 0;
+      padding: 10px;
+      padding-left: 12px;
+      padding-right: 32px;
+      text-overflow: ellipsis;
+      width: 100%;
+
+      @include dark-theme {
+        background-color: $color-gray-90;
+        border-color: $color-gray-60;
+        color: $color-gray-05;
+      }
+
+      &:focus {
+        border: 3px solid $ultramarine-ui-light;
+        line-height: 14px;
+        padding-left: 10px;
+      }
+    }
+
+    &::after {
+      border: 2px solid $color-gray-60;
+      border-radius: 2px;
+      border-right: 0;
+      border-top: 0;
+      content: ' ';
+      display: block;
+      height: 10px;
+      pointer-events: none;
+      position: absolute;
+      right: 15px;
+      top: 14px;
+      transform-origin: center;
+      transform: rotate(-45deg);
+      width: 10px;
+      z-index: 2;
+
+      @include dark-theme {
+        border-color: $color-gray-15;
+      }
+    }
+  }
+}
+
 // Module: Message Detail
 
 .module-message-detail {
@@ -2387,6 +3666,7 @@ $timer-icons: '55', '50', '45', '40', '35', '30', '25', '20', '15', '10', '05',
   margin-left: auto;
   margin-right: auto;
   padding: 20px;
+  outline: none;
 }
 
 .module-message-detail__message-container {
@@ -2423,8 +3703,13 @@ $timer-icons: '55', '50', '45', '40', '35', '30', '25', '20', '15', '10', '05',
 .module-message-detail__delete-button {
   @include button-reset;
 
+  @include keyboard-mode {
+    &:focus {
+      outline: -webkit-focus-ring-color auto 5px;
+    }
+  }
+
   border-radius: 5px;
-  cursor: pointer;
   margin: 1em auto;
   padding: 1em;
 
@@ -2584,6 +3869,7 @@ $timer-icons: '55', '50', '45', '40', '35', '30', '25', '20', '15', '10', '05',
   flex-grow: 1;
   width: 100%;
   height: 100%;
+  outline: none;
 }
 
 .module-media-gallery__tab-container {
@@ -2605,10 +3891,21 @@ $timer-icons: '55', '50', '45', '40', '35', '30', '25', '20', '15', '10', '05',
   @include dark-theme {
     background-color: $color-gray-90;
   }
+
+  outline: none;
+
+  &:focus {
+    @include keyboard-mode {
+      background-color: $color-gray-15;
+    }
+    @include dark-keyboard-mode {
+      background-color: $color-gray-75;
+    }
+  }
 }
 
 .module-media-gallery__tab--active {
-  border-bottom: 2px solid $color-signal-blue;
+  border-bottom: 2px solid $ultramarine-ui-light;
 }
 
 .module-media-gallery__content {
@@ -2659,12 +3956,20 @@ $timer-icons: '55', '50', '45', '40', '35', '30', '25', '20', '15', '10', '05',
 }
 
 .module-document-list-item__content {
-  cursor: pointer;
+  @include button-reset;
+  width: 100%;
+  height: 100%;
+
   display: flex;
   flex-direction: row;
   flex-wrap: nowrap;
   align-items: center;
-  height: 100%;
+
+  @include keyboard-mode {
+    &:focus {
+      box-shadow: 0px 0px 0px 2px $ultramarine-ui-light;
+    }
+  }
 }
 
 .module-document-list-item__icon {
@@ -2698,13 +4003,20 @@ $timer-icons: '55', '50', '45', '40', '35', '30', '25', '20', '15', '10', '05',
 // Module: Media Grid Item
 
 .module-media-grid-item {
+  @include button-reset;
+
   height: 94px;
   width: 94px;
-  cursor: pointer;
   background-color: $color-gray-05;
   margin-right: 4px;
   margin-bottom: 4px;
   position: relative;
+
+  @include keyboard-mode {
+    &:focus {
+      box-shadow: 0px 0px 0px 2px $ultramarine-ui-light;
+    }
+  }
 }
 
 .module-media-grid-item__image {
@@ -2755,7 +4067,7 @@ $timer-icons: '55', '50', '45', '40', '35', '30', '25', '20', '15', '10', '05',
   width: 24px;
   @include color-svg(
     '../images/icons/v2/play-solid-24.svg',
-    $color-signal-blue
+    $ultramarine-ui-light
   );
 }
 
@@ -2780,33 +4092,197 @@ $timer-icons: '55', '50', '45', '40', '35', '30', '25', '20', '15', '10', '05',
   color: $color-gray-45;
 }
 
+// Module: Conversation Hero
+
+.module-conversation-hero {
+  padding: 32px 0 28px 0;
+  text-align: center;
+
+  &__avatar {
+    margin-bottom: 12px;
+  }
+
+  &__profile-name {
+    @include font-title-2;
+    margin-bottom: 2px;
+
+    @include light-theme {
+      color: $color-gray-90;
+    }
+
+    @include dark-theme {
+      color: $color-gray-05;
+    }
+  }
+
+  &__with {
+    @include font-body-2;
+    margin-bottom: 16px;
+
+    @include light-theme {
+      color: $color-gray-60;
+    }
+
+    @include dark-theme {
+      color: $color-gray-25;
+    }
+  }
+
+  &__membership {
+    @include font-body-2;
+
+    padding: 0 16px;
+
+    @include light-theme {
+      color: $color-gray-60;
+    }
+
+    @include dark-theme {
+      color: $color-gray-25;
+    }
+
+    &__name {
+      @include font-body-2-bold;
+    }
+  }
+}
+
+// Module: Message Request Actions
+
+.module-message-request-actions {
+  padding: 8px 16px 12px 16px;
+
+  @include light-theme {
+    background: $color-white;
+  }
+
+  @include dark-theme {
+    background: $color-gray-95;
+  }
+
+  &__message {
+    @include font-body-2;
+    text-align: center;
+    margin-bottom: 12px;
+
+    @include light-theme {
+      color: $color-gray-60;
+    }
+
+    @include dark-theme {
+      color: $color-gray-25;
+    }
+
+    &__name {
+      @include font-body-2-bold;
+    }
+
+    &__learn-more {
+      text-decoration: none;
+    }
+  }
+
+  &__buttons {
+    display: flex;
+    flex-direction: row;
+    justify-content: center;
+
+    &__button {
+      border: none;
+      border-radius: 4px;
+      min-width: 80px;
+      height: 36px;
+      padding: 0 14px;
+      text-align: center;
+
+      &:focus {
+        outline: none;
+
+        @include keyboard-mode {
+          box-shadow: 0px 0px 0px 2px $ultramarine-ui-light;
+        }
+      }
+
+      @include font-body-1-bold;
+
+      @include light-theme {
+        background-color: $color-gray-05;
+      }
+
+      @include dark-theme {
+        background-color: $color-gray-75;
+      }
+
+      &:not(:last-of-type) {
+        margin-right: 8px;
+      }
+
+      &--deny {
+        color: $color-accent-red;
+      }
+
+      &--accept {
+        color: $color-accent-blue;
+      }
+    }
+  }
+}
+
 // Module: Conversation List Item
 
 .module-conversation-list-item {
-  max-width: $left-pane-width;
+  @include button-reset;
+
+  width: 100%;
+
   display: flex;
   flex-direction: row;
   padding-right: 16px;
   padding-left: 16px;
   align-items: center;
 
-  cursor: pointer;
-
-  @include light-theme {
-    &:hover {
+  &:hover,
+  &:focus {
+    @include light-theme {
       background-color: $color-gray-05;
     }
-  }
-  @include dark-theme {
-    &:hover {
+    @include dark-theme {
       background-color: $color-gray-75;
     }
   }
 }
 
+.module-conversation-list-item__muted {
+  display: inline-block;
+  height: 14px;
+  margin-right: 4px;
+  vertical-align: middle;
+  width: 14px;
+
+  @include light-theme {
+    @include color-svg(
+      '../images/icons/v2/sound-off-outline-24.svg',
+      $color-gray-60
+    );
+  }
+  @include dark-theme {
+    @include color-svg(
+      '../images/icons/v2/sound-off-outline-24.svg',
+      $color-gray-25
+    );
+  }
+}
+
 .module-conversation-list-item--has-unread {
   padding-left: 12px;
-  border-left: 4px solid $color-signal-blue;
+
+  @include light-theme {
+    border-left: 4px solid $ultramarine-ui-light;
+  }
+
+  @include dark-theme {
+    border-left: 4px solid $ultramarine-ui-dark;
+  }
 }
 
 .module-conversation-list-item--is-selected {
@@ -2827,7 +4303,6 @@ $timer-icons: '55', '50', '45', '40', '35', '30', '25', '20', '15', '10', '05',
 .module-conversation-list-item__unread-count {
   text-align: center;
 
-  padding-top: 1px;
   padding-left: 3px;
   padding-right: 3px;
 
@@ -2843,12 +4318,13 @@ $timer-icons: '55', '50', '45', '40', '35', '30', '25', '20', '15', '10', '05',
   border-radius: 10px;
 
   color: $color-white;
-  background-color: $color-signal-blue;
 
   @include light-theme {
+    background-color: $ultramarine-ui-light;
     box-shadow: 0px 0px 0px 1px $color-gray-02;
   }
   @include dark-theme {
+    background-color: $ultramarine-ui-dark;
     box-shadow: 0px 0px 0px 1px $color-gray-90;
   }
 }
@@ -2876,7 +4352,7 @@ $timer-icons: '55', '50', '45', '40', '35', '30', '25', '20', '15', '10', '05',
 
   @include font-body-1-bold;
 
-  overflow-x: hidden;
+  overflow: hidden;
   white-space: nowrap;
   text-overflow: ellipsis;
 
@@ -2927,16 +4403,27 @@ $timer-icons: '55', '50', '45', '40', '35', '30', '25', '20', '15', '10', '05',
   align-items: center;
 }
 
+.module-conversation-list-item__message-request {
+  @include font-body-2-bold;
+
+  @include light-theme {
+    color: $color-gray-60;
+  }
+  @include dark-theme {
+    color: $color-gray-25;
+  }
+}
+
 .module-conversation-list-item__message__text {
   flex-grow: 1;
   flex-shrink: 1;
 
   @include font-body-2;
 
-  height: 1.4em;
   overflow: hidden;
   white-space: nowrap;
   text-overflow: ellipsis;
+  text-align: left;
 
   @include light-theme {
     color: $color-gray-60;
@@ -2957,9 +4444,12 @@ $timer-icons: '55', '50', '45', '40', '35', '30', '25', '20', '15', '10', '05',
   }
 }
 
-.module-conversation-list-item__message__draft-prefix {
-  font-style: italic;
-  margin-right: 3px;
+.module-conversation-list-item__message {
+  &__draft-prefix,
+  &__deleted-for-everyone {
+    font-style: italic;
+    margin-right: 3px;
+  }
 }
 
 .module-conversation-list-item__message__status-icon {
@@ -3016,7 +4506,8 @@ $timer-icons: '55', '50', '45', '40', '35', '30', '25', '20', '15', '10', '05',
   }
   width: 18px;
 }
-.module-conversation-list-item__message__status-icon--error {
+.module-conversation-list-item__message__status-icon--error,
+.module-conversation-list-item__message__status-icon--partial-sent {
   @include light-theme {
     @include color-svg(
       '../images/icons/v2/error-outline-12.svg',
@@ -3038,10 +4529,26 @@ $timer-icons: '55', '50', '45', '40', '35', '30', '25', '20', '15', '10', '05',
   vertical-align: middle;
   display: inline-block;
   border-radius: 50%;
+  user-select: none;
 
   img {
     object-fit: cover;
     border-radius: 50%;
+  }
+}
+
+.module-avatar-button {
+  @include button-reset;
+
+  // Ensures that the border of the item sticks tight to the inner contents
+  width: 100%;
+  line-height: 0;
+  border-radius: 50%;
+
+  @include keyboard-mode {
+    &:focus {
+      box-shadow: 0px 0px 0px 2px $ultramarine-ui-light;
+    }
   }
 }
 
@@ -3068,19 +4575,28 @@ $timer-icons: '55', '50', '45', '40', '35', '30', '25', '20', '15', '10', '05',
 
 .module-avatar__icon--group {
   @include light-theme {
-    @include color-svg('../images/profile-group.svg', $color-white);
+    @include color-svg('../images/icons/v2/group-outline-40.svg', $color-white);
   }
   @include dark-theme {
-    @include color-svg('../images/profile-group.svg', $color-gray-05);
+    @include color-svg(
+      '../images/icons/v2/group-outline-40.svg',
+      $color-gray-05
+    );
   }
 }
 
 .module-avatar__icon--direct {
   @include light-theme {
-    @include color-svg('../images/profile-individual.svg', $color-white);
+    @include color-svg(
+      '../images/icons/v2/profile-outline-40.svg',
+      $color-white
+    );
   }
   @include dark-theme {
-    @include color-svg('../images/profile-individual.svg', $color-gray-05);
+    @include color-svg(
+      '../images/icons/v2/profile-outline-40.svg',
+      $color-gray-05
+    );
   }
 }
 
@@ -3094,14 +4610,84 @@ $timer-icons: '55', '50', '45', '40', '35', '30', '25', '20', '15', '10', '05',
   }
 }
 
+.module-avatar__icon--28.module-avatar__icon--group {
+  height: 20px;
+  width: 20px;
+  @include light-theme {
+    @include color-svg('../images/icons/v2/group-outline-20.svg', $color-white);
+  }
+  @include dark-theme {
+    @include color-svg(
+      '../images/icons/v2/group-outline-20.svg',
+      $color-gray-05
+    );
+  }
+}
+.module-avatar__icon--28.module-avatar__icon--direct {
+  height: 20px;
+  width: 20px;
+  @include light-theme {
+    @include color-svg(
+      '../images/icons/v2/profile-outline-20.svg',
+      $color-white
+    );
+  }
+  @include dark-theme {
+    @include color-svg(
+      '../images/icons/v2/profile-outline-20.svg',
+      $color-gray-05
+    );
+  }
+}
+
 .module-avatar__label--28 {
   font-size: 14px;
   line-height: 28px;
 }
 
-.module-avatar__icon--28 {
-  height: 16px;
-  width: 16px;
+.module-avatar--32 {
+  height: 32px;
+  width: 32px;
+
+  img {
+    height: 32px;
+    width: 32px;
+  }
+}
+
+.module-avatar__icon--32.module-avatar__icon--group {
+  height: 20px;
+  width: 20px;
+  @include light-theme {
+    @include color-svg('../images/icons/v2/group-outline-20.svg', $color-white);
+  }
+  @include dark-theme {
+    @include color-svg(
+      '../images/icons/v2/group-outline-20.svg',
+      $color-gray-05
+    );
+  }
+}
+.module-avatar__icon--32.module-avatar__icon--direct {
+  height: 20px;
+  width: 20px;
+  @include light-theme {
+    @include color-svg(
+      '../images/icons/v2/profile-outline-20.svg',
+      $color-white
+    );
+  }
+  @include dark-theme {
+    @include color-svg(
+      '../images/icons/v2/profile-outline-20.svg',
+      $color-gray-05
+    );
+  }
+}
+
+.module-avatar__label--32 {
+  font-size: 14px;
+  line-height: 32px;
 }
 
 .module-avatar--52 {
@@ -3122,8 +4708,12 @@ $timer-icons: '55', '50', '45', '40', '35', '30', '25', '20', '15', '10', '05',
 }
 
 .module-avatar__icon--52 {
-  height: 26px;
-  width: 26px;
+  height: 38px;
+  width: 38px;
+}
+.module-avatar__icon--52.module-avatar__icon--direct {
+  height: 42px;
+  width: 42px;
 }
 
 .module-avatar--80 {
@@ -3139,12 +4729,63 @@ $timer-icons: '55', '50', '45', '40', '35', '30', '25', '20', '15', '10', '05',
 .module-avatar__label--80 {
   width: 80px;
   font-size: 40px;
-  line-height: 82px;
+  line-height: 80px;
 }
 
 .module-avatar__icon--80 {
-  height: 42px;
-  width: 42px;
+  height: 58px;
+  width: 58px;
+}
+
+.module-avatar__icon--80.module-avatar__icon--direct {
+  height: 62px;
+  width: 62px;
+}
+
+.module-avatar--96 {
+  height: 96px;
+  width: 96px;
+
+  img {
+    height: 96px;
+    width: 96px;
+  }
+}
+
+.module-avatar__label--96 {
+  width: 96px;
+  font-size: 48px;
+  line-height: 96px;
+}
+
+.module-avatar__icon--96 {
+  height: 70px;
+  width: 70px;
+}
+
+.module-avatar--112 {
+  height: 112px;
+  width: 112px;
+
+  img {
+    height: 112px;
+    width: 112px;
+  }
+}
+
+.module-avatar__label--112 {
+  width: 112px;
+  font-size: 56px;
+  line-height: 112px;
+}
+
+.module-avatar__icon--112 {
+  height: 81px;
+  width: 81px;
+}
+.module-avatar__icon--112.module-avatar__icon--direct {
+  height: 87px;
+  width: 87px;
 }
 
 .module-avatar__icon--note-to-self {
@@ -3159,9 +4800,6 @@ $timer-icons: '55', '50', '45', '40', '35', '30', '25', '20', '15', '10', '05',
   }
 }
 
-.module-avatar--with-click {
-  cursor: pointer;
-}
 .module-avatar--no-image {
   @include light-theme {
     background-color: $color-conversation-grey;
@@ -3171,8 +4809,12 @@ $timer-icons: '55', '50', '45', '40', '35', '30', '25', '20', '15', '10', '05',
   }
 }
 
+.module-avatar__spinner-container {
+  padding: 4px;
+}
+
 .module-avatar--signal-blue {
-  background-color: $color-signal-blue;
+  background-color: $ultramarine-ui-light;
 }
 
 @each $color, $value in $conversation-colors {
@@ -3193,157 +4835,170 @@ $timer-icons: '55', '50', '45', '40', '35', '30', '25', '20', '15', '10', '05',
 // Module: Main Header
 
 .module-main-header {
-  height: $header-height;
-  width: $left-pane-width;
+  height: calc(#{$header-height} + var(--title-bar-drag-area-height));
+  width: 100%;
 
   padding-left: 16px;
-
-  display: flex;
-  flex-direction: row;
-  align-items: center;
-}
-
-.module-main-header__search {
-  margin-left: 12px;
-  position: relative;
-}
-
-.module-main-header__search__input {
-  height: 28px;
-
-  // 320 - 28 (avatar) - 32 (left/right margin) - 12 (space to avatar)
-  width: 248px;
-
-  padding-left: 30px;
-  padding-right: 5px;
-
-  border-radius: 14px;
-  border: none;
-
-  @include font-body-2;
-
-  @include light-theme {
-    background-color: $color-gray-05;
-    color: $color-gray-90;
-    border: solid 1px $color-gray-02;
-  }
-  @include dark-theme {
-    color: $color-gray-05;
-    background-color: $color-gray-95;
-    border: solid 1px $color-gray-80;
-  }
-
-  &:placeholder {
-    color: $color-gray-45;
-  }
-
-  &:focus {
-    border: solid 1px $color-signal-blue;
-    outline: none;
-  }
-}
-
-.module-main-header__search__input--with-text {
-  padding-right: 30px;
-}
-
-.module-main-header__search__input--in-conversation {
-  padding-left: 50px;
-}
-
-.module-main-header__search__icon {
-  position: absolute;
-  left: 8px;
-  top: 6px;
-  height: 16px;
-  width: 16px;
-
-  cursor: text;
-
-  @include light-theme {
-    @include color-svg('../images/icons/v2/search-16.svg', $color-gray-75);
-  }
-  @include dark-theme {
-    @include color-svg('../images/icons/v2/search-16.svg', $color-gray-25);
-  }
-}
-
-.module-main-header__search__in-conversation-pill {
-  position: absolute;
-  left: 3px;
-  top: 3px;
-  bottom: 3px;
-
-  border-radius: 14px;
-  width: 42px;
+  padding-right: 16px;
+  padding-top: var(--title-bar-drag-area-height);
 
   display: flex;
   flex-direction: row;
   align-items: center;
 
-  // Overriding some default button styling
-  border: none;
-  padding: 0;
+  & > * {
+    margin-right: 12px;
 
-  @include light-theme {
-    background-color: $color-gray-15;
+    &:last-child {
+      margin-right: 0;
+    }
   }
-  @include dark-theme {
-    background-color: $color-gray-75;
-  }
-}
-.module-main-header__search__in-conversation-pill__avatar-container {
-  margin-left: 4px;
-  height: 16px;
-  width: 16px;
-  border-radius: 8px;
 
-  background-color: $color-signal-blue;
-}
-.module-main-header__search__in-conversation-pill__avatar {
-  height: 16px;
-  width: 16px;
+  &__search {
+    flex-grow: 1;
+    position: relative;
+    display: flex;
+    flex-direction: row;
 
-  @include light-theme {
-    @include color-svg(
-      '../images/icons/v2/profile-circle-outline-24.svg',
-      $color-white
-    );
-  }
-  @include dark-theme {
-    @include color-svg(
-      '../images/icons/v2/profile-circle-solid-24.svg',
-      $color-gray-05
-    );
-  }
-}
-.module-main-header__search__in-conversation-pill__x-button {
-  margin-left: 2px;
+    &__input {
+      flex-grow: 1;
+      height: 28px;
 
-  height: 16px;
-  width: 16px;
+      padding-left: 30px;
+      padding-right: 5px;
 
-  @include light-theme {
-    @include color-svg('../images/icons/v2/x-24.svg', $color-gray-60);
-  }
-  @include dark-theme {
-    @include color-svg('../images/icons/v2/x-24.svg', $color-gray-25);
-  }
-}
+      border-radius: 14px;
+      border: none;
 
-.module-main-header__search__cancel-icon {
-  position: absolute;
-  right: 8px;
-  top: 5px;
-  height: 18px;
-  width: 18px;
-  cursor: pointer;
+      @include font-body-2;
 
-  @include light-theme {
-    @include color-svg('../images/icons/v2/x-24.svg', $color-gray-60);
-  }
-  @include dark-theme {
-    @include color-svg('../images/icons/v2/x-24.svg', $color-gray-25);
+      @include light-theme {
+        background-color: $color-gray-05;
+        color: $color-gray-90;
+        border: solid 1px $color-gray-02;
+      }
+      @include dark-theme {
+        color: $color-gray-05;
+        background-color: $color-gray-95;
+        border: solid 1px $color-gray-80;
+      }
+
+      &:placeholder {
+        color: $color-gray-45;
+      }
+
+      &:focus {
+        border: solid 1px $ultramarine-ui-light;
+        outline: none;
+      }
+
+      &--with-text {
+        padding-right: 30px;
+      }
+
+      &--in-conversation {
+        padding-left: 50px;
+      }
+    }
+
+    &__icon {
+      position: absolute;
+      left: 8px;
+      top: 6px;
+      height: 16px;
+      width: 16px;
+
+      cursor: text;
+
+      @include light-theme {
+        @include color-svg('../images/icons/v2/search-16.svg', $color-gray-75);
+      }
+      @include dark-theme {
+        @include color-svg('../images/icons/v2/search-16.svg', $color-gray-25);
+      }
+    }
+
+    &__in-conversation-pill {
+      position: absolute;
+      left: 3px;
+      top: 3px;
+      bottom: 3px;
+
+      border-radius: 14px;
+      width: 42px;
+
+      display: flex;
+      flex-direction: row;
+      align-items: center;
+
+      // Overriding some default button styling
+      border: none;
+      padding: 0;
+      outline: none;
+
+      @include light-theme {
+        background-color: $color-gray-15;
+      }
+      @include dark-theme {
+        background-color: $color-gray-75;
+      }
+
+      &__avatar-container {
+        margin-left: 4px;
+        height: 16px;
+        width: 16px;
+        border-radius: 8px;
+
+        background-color: $ultramarine-ui-light;
+      }
+
+      &__avatar {
+        height: 16px;
+        width: 16px;
+
+        @include light-theme {
+          @include color-svg(
+            '../images/icons/v2/profile-circle-outline-24.svg',
+            $color-white
+          );
+        }
+        @include dark-theme {
+          @include color-svg(
+            '../images/icons/v2/profile-circle-solid-24.svg',
+            $color-gray-05
+          );
+        }
+      }
+
+      &__x-button {
+        margin-left: 2px;
+
+        height: 16px;
+        width: 16px;
+
+        @include light-theme {
+          @include color-svg('../images/icons/v2/x-24.svg', $color-gray-60);
+        }
+        @include dark-theme {
+          @include color-svg('../images/icons/v2/x-24.svg', $color-gray-25);
+        }
+      }
+    }
+
+    &__cancel-icon {
+      position: absolute;
+      right: 8px;
+      top: 5px;
+      height: 18px;
+      width: 18px;
+
+      @include light-theme {
+        @include color-svg('../images/icons/v2/x-24.svg', $color-gray-60);
+      }
+      @include dark-theme {
+        @include color-svg('../images/icons/v2/x-24.svg', $color-gray-25);
+      }
+    }
   }
 }
 
@@ -3354,6 +5009,93 @@ $timer-icons: '55', '50', '45', '40', '35', '30', '25', '20', '15', '10', '05',
   display: inline-block;
   margin: 1px;
   vertical-align: middle;
+  overflow: hidden;
+}
+
+.module-image--not-downloaded {
+  align-items: center;
+  display: flex;
+  justify-content: center;
+
+  i {
+    align-items: center;
+    display: flex;
+    justify-content: center;
+    border-radius: 48px;
+    height: 48px;
+    width: 48px;
+
+    @include light-theme {
+      background-color: $color-gray-65;
+    }
+    @include dark-theme {
+      background-color: $color-gray-75;
+    }
+
+    &:after {
+      content: '';
+      height: 17px;
+      width: 17px;
+      @include color-svg('../images/icons/v2/arrow-down-24.svg', $color-white);
+    }
+  }
+
+  &:hover {
+    i {
+      background-color: $color-black;
+    }
+  }
+
+  &:focus {
+    i {
+      background-color: $color-gray-75;
+      border: 4px solid $ultramarine-ui-light;
+      box-sizing: border-box;
+      outline: none;
+    }
+  }
+}
+
+.module-image__download-pending {
+  position: relative;
+
+  &--spinner-container {
+    align-items: center;
+    display: flex;
+    height: 100%;
+    justify-content: center;
+    left: 0;
+    position: absolute;
+    top: 0;
+    width: 100%;
+  }
+
+  &--spinner {
+    background-color: $color-gray-75;
+    border-radius: 48px;
+    height: 48px;
+    width: 48px;
+
+    .module-image-spinner {
+      &__container {
+        margin: 12px auto;
+      }
+
+      &__arc {
+        background-color: $color-gray-75;
+      }
+
+      &__circle {
+        background-color: $color-white;
+      }
+
+      @include dark-theme {
+        &__arc {
+          background-color: $color-gray-75;
+        }
+      }
+    }
+  }
 }
 
 .module-image--with-background {
@@ -3369,10 +5111,6 @@ $timer-icons: '55', '50', '45', '40', '35', '30', '25', '20', '15', '10', '05',
   position: absolute;
   top: 6px;
   left: 6px;
-}
-
-.module-image__with-click-handler {
-  cursor: pointer;
 }
 
 .module-image--soft-corners {
@@ -3395,31 +5133,65 @@ $timer-icons: '55', '50', '45', '40', '35', '30', '25', '20', '15', '10', '05',
   border-top-left-radius: 10px;
 }
 
-.module-image--selection--selected {
-  position: absolute;
-  top: 1px;
-  bottom: 1px;
-  left: 1px;
-  right: 1px;
-  border-radius: 10px;
-
-  // cubic-bezier taken from https://easings.net/en#easeOutExpo
-  animation: message--selected 1s cubic-bezier(0.19, 1, 0.22, 1);
-}
-
 .module-image__border-overlay {
+  @include button-reset;
+
+  width: 100%;
+  cursor: inherit;
+
   position: absolute;
   top: 0;
   bottom: 0;
-  z-index: 1;
   left: 0;
   right: 0;
+  z-index: 2;
+}
 
+.module-image__border-overlay--with-click-handler {
+  cursor: pointer;
+}
+
+.module-image__border-overlay--with-border {
   @include light-theme {
     box-shadow: inset 0px 0px 0px 1px $color-black-alpha-20;
   }
   @include dark-theme {
     box-shadow: inset 0px 0px 0px 1px $color-white-alpha-20;
+  }
+}
+
+// Only if it's a sticker do we put the outline inside it
+.module-message--selected
+  .module-message__container--with-sticker
+  .module-image__border-overlay {
+  @include mouse-mode {
+    top: 1px;
+    bottom: 1px;
+    left: 1px;
+    right: 1px;
+    border-radius: 10px;
+
+    animation: message--mouse-selected 1s $ease-out-expo;
+  }
+}
+
+.module-message:focus
+  .module-message__container--with-sticker
+  .module-image__border-overlay {
+  @include keyboard-mode {
+    top: 1px;
+    bottom: 1px;
+    left: 1px;
+    right: 1px;
+    border-radius: 10px;
+
+    box-shadow: 0 0 0 3px $ultramarine-ui-light;
+  }
+}
+
+button.module-image__border-overlay:focus {
+  @include keyboard-mode {
+    box-shadow: inset 0px 0px 0px 2px $ultramarine-ui-light;
   }
 }
 
@@ -3444,9 +5216,6 @@ $timer-icons: '55', '50', '45', '40', '35', '30', '25', '20', '15', '10', '05',
   object-fit: cover;
   // redundant with attachment-container, but we get cursor flashing on move otherwise
   cursor: pointer;
-
-  // Seems to be related to body text size
-  margin-bottom: -5px;
 }
 
 .module-image__bottom-overlay {
@@ -3471,7 +5240,7 @@ $timer-icons: '55', '50', '45', '40', '35', '30', '25', '20', '15', '10', '05',
   );
   position: absolute;
   bottom: 0;
-  z-index: 2;
+  z-index: 1;
   left: 0;
   right: 0;
 }
@@ -3498,7 +5267,7 @@ $timer-icons: '55', '50', '45', '40', '35', '30', '25', '20', '15', '10', '05',
   width: 24px;
   @include color-svg(
     '../images/icons/v2/play-solid-24.svg',
-    $color-signal-blue
+    $ultramarine-ui-light
   );
 }
 
@@ -3508,7 +5277,10 @@ $timer-icons: '55', '50', '45', '40', '35', '30', '25', '20', '15', '10', '05',
   left: 0;
   right: 0;
   bottom: 0;
-  z-index: 2;
+  z-index: 3;
+
+  // This allows click-through to the overlay button behind it
+  pointer-events: none;
 
   color: $color-white;
 
@@ -3518,14 +5290,22 @@ $timer-icons: '55', '50', '45', '40', '35', '30', '25', '20', '15', '10', '05',
 }
 
 .module-image__close-button {
-  cursor: pointer;
+  @include button-reset;
+
   position: absolute;
   top: 5px;
   right: 5px;
   width: 16px;
   height: 16px;
   z-index: 2;
+
   background-image: url('../images/x-shadow-16.svg');
+
+  @include keyboard-mode {
+    &:focus {
+      outline: 2px solid $ultramarine-ui-light;
+    }
+  }
 }
 
 // Module: Image Grid
@@ -3667,7 +5447,8 @@ $timer-icons: '55', '50', '45', '40', '35', '30', '25', '20', '15', '10', '05',
 }
 
 .module-attachments__close-button {
-  cursor: pointer;
+  @include button-reset;
+
   position: absolute;
   top: 8px;
   right: 16px;
@@ -3677,6 +5458,12 @@ $timer-icons: '55', '50', '45', '40', '35', '30', '25', '20', '15', '10', '05',
 
   z-index: 2;
   @include color-svg('../images/icons/v2/x-24.svg', $color-black);
+
+  @include keyboard-mode {
+    &:focus {
+      @include color-svg('../images/icons/v2/x-24.svg', $ultramarine-ui-light);
+    }
+  }
 }
 
 .module-attachments__rail {
@@ -3700,6 +5487,7 @@ $timer-icons: '55', '50', '45', '40', '35', '30', '25', '20', '15', '10', '05',
   position: relative;
   border-radius: 4px;
   vertical-align: middle;
+  white-space: nowrap;
 
   @include light-theme {
     box-shadow: inset 0px 0px 0px 1px $color-black-alpha-20;
@@ -3713,7 +5501,8 @@ $timer-icons: '55', '50', '45', '40', '35', '30', '25', '20', '15', '10', '05',
 }
 
 .module-staged-generic-attachment__close-button {
-  cursor: pointer;
+  @include button-reset;
+
   position: absolute;
   top: 5px;
   right: 5px;
@@ -3880,16 +5669,17 @@ $timer-icons: '55', '50', '45', '40', '35', '30', '25', '20', '15', '10', '05',
     color: $color-white-alpha-80;
   }
   &:focus {
-    border: 1px solid $color-signal-blue;
+    border: 1px solid $ultramarine-ui-light;
     outline: none;
   }
 }
 
 .module-caption-editor__save-button {
+  @include button-reset;
+
   position: absolute;
-  background-color: $color-signal-blue;
+  background-color: $ultramarine-ui-light;
   color: $color-white;
-  cursor: pointer;
 
   height: 28px;
   border-radius: 15px;
@@ -3905,6 +5695,8 @@ $timer-icons: '55', '50', '45', '40', '35', '30', '25', '20', '15', '10', '05',
 // Module: Staged Placeholder Attachment
 
 .module-staged-placeholder-attachment {
+  @include button-reset;
+
   margin: 1px;
   border-radius: 4px;
 
@@ -3912,7 +5704,6 @@ $timer-icons: '55', '50', '45', '40', '35', '30', '25', '20', '15', '10', '05',
   width: 120px;
   display: inline-block;
   vertical-align: middle;
-  cursor: pointer;
   position: relative;
 
   @include light-theme {
@@ -3921,11 +5712,22 @@ $timer-icons: '55', '50', '45', '40', '35', '30', '25', '20', '15', '10', '05',
       background: $color-gray-05;
     }
   }
+  @include keyboard-mode {
+    &:focus {
+      box-shadow: inset 0 0 0 2px $ultramarine-ui-light;
+    }
+  }
+
   @include dark-theme {
     border: 1px solid $color-gray-60;
 
     &:hover {
       background: $color-gray-75;
+    }
+  }
+  @include dark-keyboard-mode {
+    &:focus {
+      box-shadow: inset 0 0 0 2px $ultramarine-ui-light;
     }
   }
 }
@@ -3954,7 +5756,7 @@ $timer-icons: '55', '50', '45', '40', '35', '30', '25', '20', '15', '10', '05',
   position: relative;
   display: flex;
   flex-direction: row;
-  align-items: flex-start;
+  align-items: stretch;
 
   min-height: 65px;
 }
@@ -3979,6 +5781,8 @@ $timer-icons: '55', '50', '45', '40', '35', '30', '25', '20', '15', '10', '05',
   margin-right: 8px;
 }
 .module-staged-link-preview__content {
+  display: flex;
+  flex-direction: column;
   margin-right: 20px;
 }
 .module-staged-link-preview__title {
@@ -3993,14 +5797,46 @@ $timer-icons: '55', '50', '45', '40', '35', '30', '25', '20', '15', '10', '05',
 
   overflow: hidden;
   display: -webkit-box;
-  -webkit-line-clamp: 2;
+  -webkit-line-clamp: 1;
   -webkit-box-orient: vertical;
+}
+.module-staged-link-preview__description {
+  @include font-body-1;
+
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-line-clamp: 1;
+  -webkit-box-orient: vertical;
+}
+.module-staged-link-preview__footer {
+  @include font-body-2;
+
+  display: flex;
+  flex-flow: row wrap;
+  align-items: center;
+
+  @include light-theme {
+    color: $color-gray-60;
+  }
+  @include dark-theme {
+    color: $color-gray-25;
+  }
+
+  > *:not(:first-child) {
+    display: flex;
+
+    &:before {
+      content: '•';
+      font-size: 50%;
+      margin-left: 0.2rem;
+      margin-right: 0.2rem;
+    }
+  }
 }
 .module-staged-link-preview__location {
   @include font-body-2;
 
-  margin-top: 4px;
-  text-transform: uppercase;
+  text-transform: lowercase;
 
   @include light-theme {
     color: $color-gray-60;
@@ -4010,7 +5846,8 @@ $timer-icons: '55', '50', '45', '40', '35', '30', '25', '20', '15', '10', '05',
   }
 }
 .module-staged-link-preview__close-button {
-  cursor: pointer;
+  @include button-reset;
+
   position: absolute;
   top: 0px;
   right: 0px;
@@ -4021,8 +5858,19 @@ $timer-icons: '55', '50', '45', '40', '35', '30', '25', '20', '15', '10', '05',
   @include light-theme {
     @include color-svg('../images/icons/v2/x-24.svg', $color-gray-60);
   }
+  @include keyboard-mode {
+    &:focus {
+      @include color-svg('../images/icons/v2/x-24.svg', $ultramarine-ui-light);
+    }
+  }
+
   @include dark-theme {
     @include color-svg('../images/icons/v2/x-24.svg', $color-gray-25);
+  }
+  @include dark-keyboard-mode {
+    &:focus {
+      @include color-svg('../images/icons/v2/x-24.svg', $ultramarine-ui-dark);
+    }
   }
 }
 
@@ -4136,6 +5984,9 @@ $timer-icons: '55', '50', '45', '40', '35', '30', '25', '20', '15', '10', '05',
   }
 }
 
+.module-spinner__circle--on-avatar {
+  background-color: $color-white-alpha-40;
+}
 .module-spinner__circle--on-background {
   @include light-theme {
     background-color: $color-gray-05;
@@ -4153,27 +6004,101 @@ $timer-icons: '55', '50', '45', '40', '35', '30', '25', '20', '15', '10', '05',
   }
 }
 
+.module-spinner__circle--on-progress-dialog {
+  @include light-theme {
+    background-color: $color-white;
+  }
+  @include dark-theme {
+    background-color: $color-gray-80;
+  }
+}
+.module-spinner__arc--on-progress-dialog {
+  background-color: $ultramarine-ui-light;
+}
+.module-spinner__arc--on-avatar {
+  background-color: $color-white;
+}
+
 // Module: Highlighted Message Body
 
 .module-message-body__highlight {
   font-weight: bold;
 }
 
+.module-message-body__at-mention {
+  background-color: $color-black-alpha-40;
+  border-radius: 4px;
+  cursor: pointer;
+  display: inline-block;
+  padding-left: 4px;
+  padding-right: 4px;
+  border: 1px solid transparent;
+
+  &:focus {
+    border: 1px solid $color-black;
+    outline: none;
+  }
+}
+
+.module-message-body__at-mention--incoming {
+  @include ios-theme {
+    @include light-theme {
+      background-color: $color-gray-20;
+    }
+  }
+
+  @include ios-dark-theme {
+    background-color: $color-gray-60;
+  }
+}
+
+.module-message-body__at-mention--outgoing {
+  @include light-theme {
+    background-color: $color-gray-20;
+  }
+
+  @include dark-theme {
+    background-color: $color-gray-60;
+  }
+
+  @include ios-theme {
+    background-color: $ultramarine-brand-dark;
+  }
+}
+
 // Module: Search Results
 
 .module-search-results {
+  outline: none;
   overflow: hidden;
   flex-grow: 1;
 }
 
-.module-search-results__conversations-header {
+.module-search-results__conversations-header,
+.module-search-results__contacts-header,
+.module-search-results__messages-header {
   @include font-body-1-bold;
 
-  height: 36px;
+  height: 52px;
   margin-left: 16px;
+  padding-bottom: 8px;
+  padding-top: 8px;
 
   @include dark-theme {
     color: $color-gray-05;
+  }
+}
+
+.module-search-results__sms-not-supported {
+  font-size: 14px;
+  padding-top: 12px;
+  text-align: center;
+
+  @include light-theme {
+    color: $color-gray-60;
+  }
+  @include dark-theme {
+    color: $color-gray-25;
   }
 }
 
@@ -4183,28 +6108,7 @@ $timer-icons: '55', '50', '45', '40', '35', '30', '25', '20', '15', '10', '05',
   padding-right: 1em;
   width: 100%;
   text-align: center;
-}
-
-.module-search-results__contacts-header {
-  @include font-body-1-bold;
-
-  height: 36px;
-  margin-left: 16px;
-
-  @include dark-theme {
-    color: $color-gray-05;
-  }
-}
-
-.module-search-results__messages-header {
-  @include font-body-1-bold;
-
-  height: 36px;
-  margin-left: 16px;
-
-  @include dark-theme {
-    color: $color-gray-05;
-  }
+  outline: none;
 }
 
 .module-search-results__spinner-container {
@@ -4217,6 +6121,10 @@ $timer-icons: '55', '50', '45', '40', '35', '30', '25', '20', '15', '10', '05',
 // Module: Message Search Result
 
 .module-message-search-result {
+  @include button-reset;
+
+  width: 100%;
+
   padding: 8px;
   padding-left: 16px;
   padding-right: 16px;
@@ -4227,8 +6135,8 @@ $timer-icons: '55', '50', '45', '40', '35', '30', '25', '20', '15', '10', '05',
   flex-direction: row;
   align-items: flex-start;
 
-  cursor: pointer;
-  &:hover {
+  &:hover,
+  &:focus {
     @include light-theme {
       background-color: $color-gray-05;
     }
@@ -4240,10 +6148,10 @@ $timer-icons: '55', '50', '45', '40', '35', '30', '25', '20', '15', '10', '05',
 
 .module-message-search-result--is-selected {
   @include light-theme {
-    background-color: $color-gray-05;
+    background-color: $color-gray-15;
   }
   @include dark-theme {
-    background-color: $color-gray-75;
+    background-color: $color-gray-65;
   }
 }
 
@@ -4328,6 +6236,1346 @@ $timer-icons: '55', '50', '45', '40', '35', '30', '25', '20', '15', '10', '05',
   //     - https://medium.com/mofed/css-line-clamp-the-good-the-bad-and-the-straight-up-broken-865413f16e5
 }
 
+// Module: Reaction Viewer
+
+.module-reaction-viewer {
+  width: 320px;
+  height: 320px;
+  border-radius: 8px;
+  display: flex;
+  flex-direction: column;
+
+  @include popper-shadow();
+
+  @include light-theme() {
+    background: $color-white;
+  }
+
+  @include dark-theme() {
+    background: $color-gray-75;
+  }
+
+  &__header {
+    width: 100%;
+    min-height: 44px;
+    padding: 0px 8px;
+    display: flex;
+    flex-direction: row;
+    justify-content: flex-start;
+    align-items: center;
+    overflow-x: auto;
+
+    &__button {
+      min-height: 28px;
+      border: none;
+      border-radius: 18px;
+      padding: 0px 8px;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      flex-basis: 45px;
+      flex-shrink: 0;
+
+      &:not(:first-of-type) {
+        margin-left: 4px;
+      }
+
+      &:focus {
+        outline: none;
+      }
+      @include keyboard-mode {
+        &:focus {
+          box-shadow: 0px 0px 0px 2px $ultramarine-ui-light;
+        }
+      }
+
+      background: none;
+
+      &--selected {
+        @include light-theme() {
+          background: $color-gray-05;
+        }
+
+        @include dark-theme() {
+          background: $color-gray-60;
+        }
+      }
+
+      &__count,
+      &__all {
+        @include font-body-2-bold();
+
+        white-space: nowrap;
+
+        @include light-theme() {
+          color: $color-gray-90;
+        }
+
+        @include dark-theme() {
+          color: $color-gray-05;
+        }
+      }
+
+      &__count {
+        margin-left: 4px;
+      }
+    }
+  }
+
+  &__body {
+    flex-grow: 1;
+    padding: 0 16px;
+    overflow: auto;
+
+    &__row {
+      margin-top: 12px;
+      min-height: 32px;
+      display: flex;
+      flex-direction: row;
+      justify-content: flex-start;
+      align-items: center;
+
+      &:last-of-type {
+        margin-bottom: 12px;
+      }
+
+      &__avatar {
+        min-width: 32px;
+        flex-shrink: 1;
+      }
+
+      &__name {
+        @include font-body-1-bold();
+        flex-grow: 1;
+        margin-left: 8px;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+
+        @include light-theme() {
+          color: $color-gray-90;
+        }
+
+        @include dark-theme() {
+          color: $color-gray-05;
+        }
+      }
+
+      &__emoji {
+        width: 18px;
+        flex-shrink: 1;
+      }
+    }
+  }
+}
+
+// Module: Reaction Picker
+
+@keyframes module-reaction-picker__background-fade {
+  from {
+    background: transparent;
+  }
+  to {
+    // This color is the same in both light and dark themes
+    background: rgba($color-black, 0.8);
+  }
+}
+
+@keyframes module-reaction-picker__emoji-fade {
+  from {
+    transform: translate3d(0, 24px, 0);
+    opacity: 0;
+  }
+  to {
+    transform: translate3d(0, 0, 0);
+    opacity: 1;
+  }
+}
+
+.module-reaction-picker {
+  width: 320px;
+  height: 56px;
+  border-radius: 30px;
+  position: relative;
+  margin: 4px 0;
+  z-index: 2;
+
+  animation: {
+    name: module-reaction-picker__background-fade;
+    duration: 400ms;
+    timing-function: $ease-out-expo;
+    fill-mode: forwards;
+  }
+
+  &__emoji-btn {
+    @include button-reset;
+    display: flex;
+    min-width: 52px;
+    min-height: 52px;
+    border-radius: 52px;
+
+    position: absolute;
+    top: 2px;
+
+    @for $i from 0 through 6 {
+      &:nth-of-type(#{$i + 1}) {
+        left: 2px + ($i * 44px);
+
+        // Prevent animation jank
+        opacity: 0;
+
+        animation: {
+          name: module-reaction-picker__emoji-fade;
+          duration: 400ms;
+          timing-function: $ease-out-expo;
+          delay: #{$i * 10ms};
+          fill-mode: forwards;
+        }
+      }
+    }
+
+    transition: background 400ms $ease-out-expo;
+    &--selected {
+      // This color is the same in both light and dark themes
+      background: rgba($color-white, 0.3);
+    }
+    &--more {
+      @include light-theme {
+        background: url('../images/any-emoji-32-light.svg') no-repeat center;
+      }
+
+      @include dark-theme {
+        background: url('../images/any-emoji-32-dark.svg') no-repeat center;
+      }
+
+      &::after {
+        content: '';
+        display: block;
+        width: 52px;
+        height: 52px;
+        opacity: 0;
+        transition: opacity 400ms $ease-out-expo;
+
+        @include light-theme {
+          background: url('../images/any-emoji-32-light-hover.svg') no-repeat
+            center;
+        }
+
+        @include dark-theme {
+          background: url('../images/any-emoji-32-dark-hover.svg') no-repeat
+            center;
+        }
+      }
+
+      &:hover::after {
+        opacity: 1;
+      }
+    }
+
+    @include keyboard-mode {
+      &:focus:before {
+        content: '';
+        display: block;
+        width: 4px;
+        height: 4px;
+        background: $ultramarine-ui-light;
+        border-radius: 2px;
+        position: absolute;
+        bottom: 4px;
+        left: calc(50% - 2px);
+      }
+    }
+
+    $emoji-btn: &;
+
+    &__emoji {
+      position: absolute;
+      left: 2px;
+      top: 2px;
+      transform-origin: center;
+      $scale: 32 / 48;
+      transform: scale3d($scale, $scale, $scale);
+      transition: transform 400ms $ease-out-expo;
+
+      #{$emoji-btn}:hover &,
+      .keyboard-mode #{$emoji-btn}:focus & {
+        transform: scale3d(1, 1, 1) translate3d(0, -24px, 0);
+        z-index: 1;
+      }
+    }
+  }
+}
+
+// Module: Calling
+.module-calling {
+  &__container {
+    align-items: center;
+    background-color: $calling-background-color;
+    display: flex;
+    flex-direction: column;
+    height: 100vh;
+    justify-content: center;
+    position: absolute;
+    width: 100%;
+    z-index: 2;
+  }
+
+  &__header {
+    color: #ffffff;
+    font-style: normal;
+    padding-bottom: 24px;
+    padding-top: calc(24px + var(--title-bar-drag-area-height));
+    text-align: center;
+    text-shadow: 0px 0px 4px rgba(0, 0, 0, 0.25);
+    width: 100%;
+
+    &--header-name {
+      font-size: 15px;
+      font-weight: 600;
+      letter-spacing: -0.009em;
+      line-height: 21px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+  }
+
+  &__buttons {
+    bottom: 0;
+    display: flex;
+    justify-content: center;
+    padding-bottom: 32px;
+    padding-top: 32px;
+    position: absolute;
+    text-align: center;
+    width: 100%;
+  }
+
+  &__background {
+    align-items: center;
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    justify-content: center;
+    overflow: hidden;
+    position: relative;
+    width: 100%;
+
+    &--blur {
+      position: absolute;
+      background-repeat: no-repeat;
+      background-size: cover;
+      background-position: center;
+      filter: blur(25px);
+      height: 100%;
+      position: absolute;
+      width: 100%;
+    }
+  }
+
+  &__video-off {
+    &--icon {
+      @include color-svg(
+        '../images/icons/v2/video-off-solid-24.svg',
+        $color-white
+      );
+      height: 24px;
+      margin-bottom: 8px;
+      width: 24px;
+    }
+
+    &--text {
+      color: $color-white;
+      z-index: 1;
+    }
+
+    &--container {
+      display: flex;
+      flex-direction: row;
+      margin-top: 12px;
+
+      .module-calling__video-off--text {
+        margin-left: 10px;
+      }
+    }
+  }
+}
+
+.module-incoming-call {
+  align-items: center;
+  background-color: $color-gray-75;
+  display: flex;
+  justify-content: space-between;
+  padding-top: var(--title-bar-drag-area-height);
+}
+
+.module-incoming-call__contact {
+  align-items: center;
+  display: flex;
+  min-width: 0;
+
+  &--avatar {
+    margin-bottom: 8px;
+    margin-left: 16px;
+    margin-top: 8px;
+    position: relative;
+  }
+
+  &--name {
+    align-items: stretch;
+    display: flex;
+    flex-direction: column;
+    margin-left: 12px;
+    min-width: 0;
+  }
+
+  &--name-header {
+    @include font-body-1-bold;
+    color: #ffffff;
+    overflow-x: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  &--message-text {
+    @include font-body-2;
+    color: #ffffff;
+  }
+}
+
+.module-incoming-call__actions {
+  display: flex;
+  margin-right: 16px;
+}
+
+.module-incoming-call__button {
+  &--accept-video-as-audio {
+    background-color: $color-gray-45;
+
+    @include keyboard-mode {
+      &:focus {
+        box-shadow: 0px 0px 0px 4px $ultramarine-ui-light;
+      }
+    }
+
+    @include mouse-mode {
+      &:hover {
+        box-shadow: 0px 0px 0px 2px $ultramarine-ui-light;
+      }
+    }
+
+    div {
+      @include color-svg(
+        '../images/icons/v2/video-off-solid-24.svg',
+        $color-white
+      );
+      height: 24px;
+      width: 24px;
+    }
+  }
+
+  &--accept-video {
+    background-color: $color-accent-green;
+
+    @include keyboard-mode {
+      &:focus {
+        box-shadow: 0px 0px 0px 4px $ultramarine-ui-light;
+      }
+    }
+
+    @include mouse-mode {
+      &:hover {
+        box-shadow: 0px 0px 0px 2px $ultramarine-ui-light;
+      }
+    }
+
+    div {
+      @include color-svg('../images/icons/v2/video-solid-24.svg', $color-white);
+      height: 24px;
+      width: 24px;
+    }
+  }
+
+  &--accept-audio {
+    background-color: $color-accent-green;
+
+    @include keyboard-mode {
+      &:focus {
+        box-shadow: 0px 0px 0px 4px $ultramarine-ui-light;
+      }
+    }
+
+    @include mouse-mode {
+      &:hover {
+        box-shadow: 0px 0px 0px 2px $ultramarine-ui-light;
+      }
+    }
+
+    div {
+      @include color-svg(
+        '../images/icons/v2/phone-right-solid-24.svg',
+        $color-white
+      );
+      height: 24px;
+      width: 24px;
+    }
+  }
+
+  &--decline {
+    background-color: $color-accent-red;
+
+    @include keyboard-mode {
+      &:focus {
+        box-shadow: 0px 0px 0px 4px $ultramarine-ui-light;
+      }
+    }
+
+    @include mouse-mode {
+      &:hover {
+        box-shadow: 0px 0px 0px 2px $ultramarine-ui-light;
+      }
+    }
+
+    div {
+      @include color-svg('../images/icons/v2/phone-down-24.svg', $color-white);
+      height: 24px;
+      width: 24px;
+    }
+  }
+}
+
+.module-incoming-call__button,
+.module-calling-button__icon {
+  align-items: center;
+  border-radius: 40px;
+  border: none;
+  display: flex;
+  height: 40px;
+  justify-content: center;
+  margin-left: 12px;
+  margin-right: 12px;
+  outline: none;
+  width: 40px;
+}
+
+.module-calling-button {
+  $size: 22px;
+
+  &__participants {
+    @include color-svg('../images/icons/v2/group-solid-24.svg', $color-white);
+    display: inline-block;
+    height: $size;
+    width: $size;
+
+    &--container {
+      @include button-reset;
+      border: none;
+      color: $color-white;
+    }
+
+    &--shown {
+      background-color: $color-gray-75;
+      border-radius: 16px;
+      padding: 6px 8px;
+      padding-bottom: 2px;
+      margin-top: -6px;
+      margin-right: -8px;
+    }
+
+    &--count {
+      @include font-body-2-bold;
+      margin-left: 5px;
+      vertical-align: top;
+    }
+  }
+
+  &__settings {
+    @include color-svg(
+      '../images/icons/v2/settings-solid-16.svg',
+      $color-white
+    );
+    height: $size;
+    width: $size;
+  }
+
+  &__grid-view {
+    @include color-svg(
+      '../images/icons/v2/grid-view-solid-24.svg',
+      $color-white
+    );
+    height: $size;
+    width: $size;
+  }
+
+  &__speaker-view {
+    @include color-svg(
+      '../images/icons/v2/speaker-view-solid-24.svg',
+      $color-white
+    );
+    height: $size;
+    width: $size;
+  }
+
+  &__pip {
+    @include color-svg('../images/icons/v2/pip-minimize-24.svg', $color-white);
+    height: $size;
+    width: $size;
+  }
+}
+
+.module-calling-button__icon {
+  border-radius: 56px;
+  height: 56px;
+  width: 56px;
+
+  @mixin calling-button-icon($icon, $background-color, $icon-color) {
+    background-color: $background-color;
+
+    div {
+      @include color-svg($icon, $icon-color);
+      height: 28px;
+      width: 28px;
+    }
+  }
+
+  @mixin calling-button-icon-on($icon) {
+    @include calling-button-icon($icon, $color-white, $color-gray-75);
+  }
+
+  @mixin calling-button-icon-off($icon) {
+    @include calling-button-icon($icon, $color-white-alpha-40, $color-white);
+    backdrop-filter: blur(10px);
+  }
+
+  @mixin calling-button-icon-disabled($icon) {
+    @include calling-button-icon($icon, $color-gray-45, $color-white);
+    opacity: 0.2;
+  }
+
+  // If the on/off states seem backwards, it's because this button reflects "is audio
+  //   muted?", not "is audio on?".
+  &--audio {
+    $icon: '../images/icons/v2/mic-off-solid-28.svg';
+    &--on {
+      @include calling-button-icon-off($icon);
+    }
+    &--off {
+      @include calling-button-icon-on($icon);
+    }
+    &--disabled {
+      @include calling-button-icon-disabled($icon);
+    }
+  }
+
+  &--video {
+    $icon: '../images/icons/v2/video-solid-28.svg';
+    &--on {
+      @include calling-button-icon-on($icon);
+    }
+    &--off {
+      @include calling-button-icon-off($icon);
+    }
+    &--disabled {
+      @include calling-button-icon-disabled($icon);
+    }
+  }
+
+  &--hangup {
+    @include calling-button-icon(
+      '../images/icons/v2/phone-down-28.svg',
+      $color-accent-red,
+      $color-white
+    );
+  }
+}
+
+@keyframes module-ongoing-call__controls--fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes module-ongoing-call__controls--fade-out {
+  from {
+    opacity: 1;
+  }
+  to {
+    opacity: 0;
+  }
+}
+
+.module-ongoing-call {
+  $local-preview-width: 136px;
+  $local-preview-height: 102px;
+
+  &__remote-video-enabled {
+    background-color: $color-gray-95;
+    height: 100%;
+    width: 100%;
+  }
+
+  &__remote-video-disabled {
+    background-color: $color-gray-95;
+    height: 100vh;
+    width: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  &__container {
+    &--direct {
+      .module-ongoing-call__header {
+        position: absolute;
+      }
+      .module-ongoing-call__footer {
+        position: absolute;
+      }
+    }
+  }
+
+  &__header {
+    background: linear-gradient($color-black-alpha-40, transparent);
+    top: 0;
+    width: 100%;
+    z-index: 2;
+    padding-bottom: 1rem;
+  }
+
+  &__header-message {
+    font-weight: normal;
+    font-size: 13px;
+    line-height: 18px;
+    letter-spacing: -0.0025em;
+  }
+
+  &__participants {
+    display: flex;
+    flex: 1 1 0;
+    width: 100%;
+
+    &__grid {
+      flex-grow: 1;
+      position: relative;
+    }
+
+    &__overflow {
+      flex: 0 0 auto;
+      position: relative;
+      margin-left: 16px;
+      margin-right: 16px;
+
+      &__inner {
+        position: absolute;
+        bottom: 0;
+        left: 0;
+        width: 100%;
+        max-height: 100%;
+        overflow-y: scroll;
+
+        &::-webkit-scrollbar,
+        &::-webkit-scrollbar-thumb {
+          width: 0;
+          background: transparent;
+        }
+      }
+
+      & .module-ongoing-call__group-call-remote-participant {
+        width: 100%;
+        margin-bottom: 1rem;
+      }
+
+      &__scroll-marker {
+        $scroll-marker-selector: &;
+
+        display: flex;
+        justify-content: center;
+        left: 0;
+        opacity: 1;
+        position: absolute;
+        scroll-behavior: smooth;
+        transition: opacity 200ms ease-out;
+        width: 100%;
+        z-index: 1;
+
+        &--hidden {
+          opacity: 0;
+        }
+
+        &__button {
+          &::before {
+            @include color-svg(
+              '../images/icons/v2/arrow-down-24.svg',
+              $color-white
+            );
+
+            content: '';
+            display: block;
+            height: 100%;
+            width: 100%;
+          }
+
+          background: $color-gray-60;
+          border-radius: 100%;
+          border: 0;
+          box-shadow: 0 0 5px rgba($color-gray-95, 0.5);
+          height: 28px;
+          margin: 12px 0;
+          opacity: 0;
+          outline: none;
+          transition: opacity 200ms ease-out;
+          width: 28px;
+        }
+
+        &--top {
+          top: 0;
+          background: linear-gradient(
+            $calling-background-color,
+            transparent 20px,
+            transparent
+          );
+
+          #{$scroll-marker-selector}__button {
+            transform: rotate(180deg);
+          }
+        }
+
+        &--bottom {
+          bottom: 0;
+          background: linear-gradient(
+            to top,
+            $calling-background-color,
+            transparent 20px,
+            transparent
+          );
+        }
+      }
+
+      &:hover &__scroll-marker__button {
+        opacity: 1;
+      }
+    }
+  }
+
+  &__group-call-remote-participant {
+    display: flex;
+    justify-content: center;
+    position: relative;
+
+    line-height: 0;
+    overflow: hidden;
+    border-radius: 5px;
+    transition: top 200ms linear, left 200ms linear, width 200ms linear,
+      height 200ms linear;
+
+    &__remote-video {
+      // The background-color is seen while the video loads.
+      background-color: $color-gray-75;
+    }
+
+    &__blocked {
+      @include color-svg('../images/icons/v2/block-24.svg', $color-white);
+      height: 24px;
+      margin-bottom: 16px;
+      width: 24px;
+
+      &--info {
+        @include button-reset;
+        background-color: $color-gray-75;
+        border-radius: 16px;
+        color: $color-white;
+        line-height: 16px;
+        padding: 3px 10px;
+      }
+
+      &--modal-title {
+        -webkit-box-orient: vertical;
+        -webkit-line-clamp: 2;
+        display: -webkit-box;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+    }
+
+    &--title {
+      @include font-caption;
+      background: linear-gradient(
+        180deg,
+        transparent,
+        $color-black-alpha-60 100%
+      );
+      bottom: 0;
+      display: flex;
+      padding: 6px;
+      position: absolute;
+      width: 100%;
+      z-index: 2;
+    }
+
+    &--contact-name {
+      color: $color-white;
+      margin-right: 20px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    &--audio-muted::after {
+      @include color-svg(
+        '../images/icons/v2/mic-off-solid-28.svg',
+        $color-white
+      );
+      content: '';
+      height: 14px;
+      position: absolute;
+      right: 6px;
+      width: 14px;
+      z-index: 1;
+    }
+  }
+
+  &__local-preview-fullsize {
+    height: 100%;
+    left: 0;
+    position: absolute;
+    top: 0;
+    width: 100%;
+  }
+
+  &__footer {
+    background: linear-gradient(transparent, $color-black-alpha-40);
+    bottom: 0;
+    display: flex;
+    justify-content: space-between;
+    width: 100%;
+    z-index: 2;
+
+    &__actions {
+      align-items: center;
+      display: flex;
+      flex-grow: 1;
+      justify-content: center;
+    }
+
+    // This layout-only element is not ideal, but lets us keep the actions centered until
+    //   until they'd overlap with the video, at which point they start to move.
+    &__local-preview-offset {
+      flex: 1 0;
+      max-width: $local-preview-width;
+      visibility: hidden;
+    }
+
+    &__local-preview {
+      border-radius: 5px;
+      display: flex;
+      height: $local-preview-height;
+      margin: 2px 16px 16px 0;
+      overflow: hidden;
+      position: relative;
+      width: $local-preview-width;
+
+      &__video {
+        // The background-color is seen while the video loads.
+        background-color: $color-gray-75;
+        height: 100%;
+        transform: rotateY(180deg);
+        width: 100%;
+      }
+
+      &--audio-muted::before {
+        @include color-svg(
+          '../images/icons/v2/mic-off-solid-28.svg',
+          $color-white
+        );
+        bottom: 6px;
+        content: '';
+        height: 14px;
+        position: absolute;
+        right: 6px;
+        width: 14px;
+        z-index: 1;
+      }
+    }
+  }
+
+  &__controls--fadeIn {
+    animation: {
+      name: module-ongoing-call__controls--fade-in;
+      duration: 400ms;
+      timing-function: $ease-out-expo;
+      fill-mode: forwards;
+    }
+  }
+
+  &__controls--fadeOut {
+    animation: {
+      name: module-ongoing-call__controls--fade-out;
+      duration: 1200ms;
+      timing-function: $ease-out-expo;
+      fill-mode: forwards;
+    }
+  }
+
+  &__toast {
+    @include font-body-1-bold;
+    background-color: $color-gray-75;
+    border-radius: 8px;
+    color: $color-white;
+    max-width: 80%;
+    opacity: 1;
+    padding: 12px;
+    position: absolute;
+    text-align: center;
+    top: 12px;
+    transition: top 200ms ease-out, opacity 200ms ease-out;
+    user-select: none;
+    z-index: 1;
+
+    &--hidden {
+      opacity: 0;
+      top: 5px;
+    }
+  }
+}
+
+.module-calling-tools {
+  display: flex;
+  justify-content: flex-end;
+  position: absolute;
+  top: calc(24px + var(--title-bar-drag-area-height));
+  width: 100%;
+
+  &__button {
+    margin-right: 25px;
+  }
+}
+
+.module-calling-lobby {
+  &__actions {
+    align-items: flex-start;
+    display: flex;
+    flex-direction: row;
+    flex: 0 0 100px;
+  }
+
+  &__button {
+    margin-left: 8px;
+    margin-right: 8px;
+    width: 160px;
+
+    &[disabled] {
+      opacity: 0.5;
+    }
+  }
+
+  // The dimensions of this element are set by JavaScript.
+  &__local-preview {
+    $transition: 200ms ease-out;
+
+    @include font-body-2;
+    border-radius: 8px;
+    color: $color-white;
+    display: flex;
+    flex-direction: column;
+    max-height: 100%;
+    max-width: 100%;
+    overflow: hidden;
+    position: relative;
+    transition: width $transition, height $transition;
+
+    &-container {
+      align-items: center;
+      display: flex;
+      flex-direction: column;
+      flex: 1 1 auto;
+      justify-content: center;
+      margin: 24px;
+      overflow: hidden;
+      width: 90%;
+    }
+
+    &__video-on {
+      background-color: $color-gray-80;
+      display: block;
+      flex-grow: 1;
+      object-fit: contain;
+      transform: rotateY(180deg);
+      width: 100%;
+      height: 100%;
+    }
+
+    &__video-off {
+      &__icon {
+        @include color-svg(
+          '../images/icons/v2/video-off-solid-24.svg',
+          $color-white
+        );
+        height: 24px;
+        margin-bottom: 8px;
+        width: 24px;
+      }
+
+      &__text {
+        z-index: 1;
+      }
+    }
+  }
+
+  &__info {
+    color: $color-white;
+    margin-bottom: 36px;
+    margin-top: 12px;
+  }
+}
+
+.module-calling-pip {
+  backface-visibility: hidden;
+  background-color: $color-gray-95;
+  border-radius: 4px;
+  box-shadow: 0px 0px 8px rgba(0, 0, 0, 0.05), 0px 8px 20px rgba(0, 0, 0, 0.3);
+  cursor: grab;
+  height: 158px;
+  position: absolute;
+  width: 120px;
+  z-index: 2;
+
+  & .module-ongoing-call__group-call-remote-participant {
+    border-radius: 0;
+  }
+
+  &__video {
+    &--remote {
+      align-items: center;
+      background-color: $color-gray-95;
+      border-radius: 4px 4px 0 0;
+      display: flex;
+      height: 120px; // This height should be kept in sync with <CallingPipRemoteVideo>'s hard-coded height.
+      justify-content: center;
+      overflow: hidden;
+      position: relative;
+      width: 100%;
+
+      .module-ongoing-call__group-call-remote-participant--audio-muted::after {
+        display: none;
+      }
+
+      // The avatar image can be dragged on Windows.
+      .module-avatar img {
+        -webkit-user-drag: none;
+        -webkit-user-select: none;
+      }
+    }
+
+    &--local {
+      bottom: 38px;
+      height: 32px;
+      position: absolute;
+      right: 4px;
+      transform: rotateY(180deg);
+      width: 32px;
+    }
+  }
+
+  &__actions {
+    align-items: center;
+    background-color: $color-gray-02;
+    border-radius: 0 0 4px 4px;
+    display: flex;
+    flex-direction: row;
+    height: 38px;
+    justify-content: space-around;
+
+    @include dark-theme {
+      background-color: $color-gray-65;
+    }
+  }
+
+  &__button {
+    &--hangup {
+      @include color-svg(
+        '../images/icons/v2/phone-down-28.svg',
+        $color-gray-75
+      );
+      height: 28px;
+      width: 28px;
+      @include dark-theme {
+        @include color-svg(
+          '../images/icons/v2/phone-down-28.svg',
+          $color-gray-15
+        );
+      }
+    }
+
+    &--pip {
+      @include color-svg(
+        '../images/icons/v2/pip-maximize-24.svg',
+        $color-gray-75
+      );
+      height: 24px;
+      width: 24px;
+      @include dark-theme {
+        @include color-svg(
+          '../images/icons/v2/pip-maximize-24.svg',
+          $color-gray-15
+        );
+      }
+    }
+  }
+}
+
+.module-calling-participants-list {
+  background-color: $color-gray-80;
+  border-radius: 8px;
+  color: $color-white;
+  margin-right: 12px;
+  margin-top: 54px;
+  overflow: hidden;
+  padding: 14px;
+  width: 280px;
+  padding-bottom: 0;
+
+  &__overlay {
+    display: flex;
+    height: 100vh;
+    justify-content: flex-end;
+    left: 0;
+    position: absolute;
+    top: 0;
+    width: 100vw;
+    z-index: 2;
+  }
+
+  &__title {
+    @include font-body-2-bold;
+  }
+
+  &__contact-icon {
+    background-color: $color-gray-25;
+  }
+
+  &__list {
+    height: 100%;
+    margin-bottom: 0;
+    margin-left: -14px;
+    margin-right: -14px;
+    margin-top: 22px;
+    overflow: scroll;
+    padding-bottom: 24px;
+    padding-left: 14px;
+    padding-right: 14px;
+    padding-top: 0;
+
+    &::-webkit-scrollbar {
+      width: 6px;
+    }
+
+    &::-webkit-scrollbar-thumb {
+      border: none;
+      border-radius: 4px;
+      background-color: $color-gray-45;
+    }
+
+    &::-webkit-scrollbar-track {
+      background-color: $color-gray-80;
+    }
+  }
+
+  &__contact {
+    @include font-body-1;
+    align-items: center;
+    display: flex;
+    justify-content: space-between;
+    list-style-type: none;
+    margin-bottom: 16px;
+  }
+
+  &__name {
+    display: inline-block;
+    margin-left: 8px;
+    max-width: 130px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    vertical-align: middle;
+    white-space: nowrap;
+  }
+
+  &__header {
+    display: flex;
+    justify-content: space-between;
+  }
+
+  &__close {
+    @include button-reset;
+
+    @include color-svg('../images/x-shadow-16.svg', $color-gray-15);
+
+    height: 16px;
+    width: 16px;
+    z-index: 2;
+
+    @include keyboard-mode {
+      &:focus {
+        outline: 2px solid $ultramarine-ui-light;
+      }
+    }
+  }
+
+  &__muted {
+    &--video {
+      @include color-svg(
+        '../images/icons/v2/video-off-solid-28.svg',
+        $color-white
+      );
+      display: inline-block;
+      margin-left: 18px;
+      height: 16px;
+      width: 16px;
+    }
+
+    &--audio {
+      @include color-svg(
+        '../images/icons/v2/mic-off-solid-28.svg',
+        $color-white
+      );
+      display: inline-block;
+      margin-left: 18px;
+      height: 16px;
+      width: 16px;
+    }
+  }
+}
+
+.module-call-need-permission-screen {
+  align-items: center;
+  background-color: $color-gray-95;
+  color: $color-gray-05;
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  justify-content: center;
+  position: relative;
+  width: 100%;
+
+  &__text {
+    margin: 2em 1em;
+    max-width: 400px;
+    @include font-body-1;
+    text-align: center;
+  }
+
+  &__button {
+    padding: 0.5em 1em;
+    border: 0;
+    border-radius: 4px;
+    @include font-body-1-bold;
+    color: $color-gray-05;
+    background: $color-gray-65;
+  }
+}
+
 // Module: Left Pane
 
 .module-left-pane {
@@ -4339,34 +7587,40 @@ $timer-icons: '55', '50', '45', '40', '35', '30', '25', '20', '15', '10', '05',
 }
 
 .module-left-pane__header {
-  flex-shrink: 0;
   flex-grow: 0;
+  flex-shrink: 0;
 }
 
 .module-left-pane__archive-header {
-  height: 48px;
+  height: calc(#{$header-height} + var(--title-bar-drag-area-height));
   width: 100%;
 
   display: inline-flex;
   flex-direction: row;
   align-items: center;
+  padding-top: var(--title-bar-drag-area-height);
+}
 
-  @include light-theme {
-    border-bottom: 1px solid $color-gray-15;
-  }
+.module-left-pane__header-row {
+  @include font-body-1-bold;
+
+  display: inline-flex;
+  align-items: center;
+  padding-left: 16px;
+
   @include dark-theme {
-    border-bottom: 1px solid $color-gray-75;
+    color: $color-gray-05;
   }
 }
 
 .module-left-pane__to-inbox-button {
+  @include button-reset;
+
   margin-left: 7px;
   margin-right: 5px;
 
   width: 24px;
   height: 24px;
-
-  cursor: pointer;
 
   @include light-theme {
     @include color-svg(
@@ -4374,11 +7628,28 @@ $timer-icons: '55', '50', '45', '40', '35', '30', '25', '20', '15', '10', '05',
       $color-gray-60
     );
   }
+  @include keyboard-mode {
+    &:focus {
+      @include color-svg(
+        '../images/icons/v2/chevron-left-24.svg',
+        $ultramarine-ui-light
+      );
+    }
+  }
+
   @include dark-theme {
     @include color-svg(
       '../images/icons/v2/chevron-left-24.svg',
       $color-gray-25
     );
+  }
+  @include dark-keyboard-mode {
+    &:hover {
+      @include color-svg(
+        '../images/icons/v2/chevron-left-24.svg',
+        $ultramarine-ui-dark
+      );
+    }
   }
 }
 
@@ -4411,9 +7682,18 @@ $timer-icons: '55', '50', '45', '40', '35', '30', '25', '20', '15', '10', '05',
   }
 }
 
-.module-left-pane__list {
+.module-left-pane__list--measure {
   flex-grow: 1;
   flex-shrink: 1;
+  outline: none;
+}
+
+.module-left-pane__list--wrapper {
+  position: relative;
+}
+
+.module-left-pane__list {
+  position: absolute;
 }
 
 .module-left-pane__virtual-list {
@@ -4421,23 +7701,27 @@ $timer-icons: '55', '50', '45', '40', '35', '30', '25', '20', '15', '10', '05',
 }
 
 .module-left-pane__archived-button {
+  @include button-reset;
+
   @include font-body-1-bold;
 
   height: 64px;
   line-height: 64px;
   text-align: center;
-  cursor: pointer;
+  width: 100%;
 
   @include light-theme {
     color: $color-gray-60;
 
-    &:hover {
+    &:hover,
+    &:focus {
       background-color: $color-gray-05;
     }
   }
   @include dark-theme {
     color: $color-gray-25;
-    &:hover {
+    &:hover,
+    &:focus {
       background-color: $color-gray-75;
     }
   }
@@ -4464,6 +7748,10 @@ $timer-icons: '55', '50', '45', '40', '35', '30', '25', '20', '15', '10', '05',
 // Module: Start New Conversation
 
 .module-start-new-conversation {
+  @include button-reset;
+
+  width: 100%;
+
   display: flex;
   flex-direction: row;
   align-items: center;
@@ -4472,15 +7760,12 @@ $timer-icons: '55', '50', '45', '40', '35', '30', '25', '20', '15', '10', '05',
   padding-bottom: 8px;
   padding-left: 16px;
 
-  cursor: pointer;
-
-  @include light-theme {
-    &:hover {
+  &:hover,
+  &:focus {
+    @include light-theme {
       background-color: $color-gray-05;
     }
-  }
-  @include dark-theme {
-    &:hover {
+    @include dark-theme {
       background-color: $color-gray-75;
     }
   }
@@ -4538,6 +7823,10 @@ $timer-icons: '55', '50', '45', '40', '35', '30', '25', '20', '15', '10', '05',
   overflow: hidden;
 }
 
+.module-timeline--disabled {
+  user-select: none;
+}
+
 .module-timeline__message-container {
   padding-top: 4px;
   padding-bottom: 4px;
@@ -4570,6 +7859,278 @@ $timer-icons: '55', '50', '45', '40', '35', '30', '25', '20', '15', '10', '05',
     background: $color-gray-75;
     ::-webkit-scrollbar-thumb {
       border: 2px solid $color-gray-75;
+    }
+  }
+}
+
+// Module: SafetyNumberChangeDialog
+
+.module-sfn-dialog__title {
+  @include font-body-1-bold;
+  text-align: center;
+
+  @include dark-theme {
+    color: $color-white;
+  }
+}
+
+.module-sfn-dialog__message {
+  @include font-body-2;
+  text-align: center;
+
+  @include light-theme {
+    color: $color-gray-60;
+  }
+
+  @include dark-theme {
+    color: $color-gray-25;
+  }
+}
+
+.module-sfn-dialog__contacts {
+  list-style-type: none;
+  max-height: 300px;
+  overflow-y: scroll;
+  padding: 0;
+}
+
+.module-sfn-dialog__contact {
+  align-items: center;
+  display: flex;
+  flex-direction: row;
+  margin-bottom: 16px;
+
+  &--wrapper {
+    flex-grow: 1;
+    margin-left: 12px;
+  }
+
+  &--name {
+    @include font-body-1-bold;
+
+    @include dark-theme {
+      color: $color-white;
+    }
+  }
+
+  &--number {
+    @include light-theme {
+      color: $color-gray-60;
+    }
+
+    @include dark-theme {
+      color: $color-gray-25;
+    }
+  }
+
+  &--view {
+    @include font-body-1-bold;
+    background: inherit;
+    border: none;
+    cursor: pointer;
+    margin-right: 2px;
+    outline: none;
+    padding: 8px 14px;
+
+    @include keyboard-mode {
+      &:focus {
+        box-shadow: 0px 0px 0px 2px $ultramarine-ui-light;
+      }
+    }
+
+    @include light-theme {
+      color: $ultramarine-ui-light;
+    }
+
+    @include dark-theme {
+      color: $ultramarine-ui-dark;
+    }
+  }
+}
+
+.module-sfn-dialog__actions {
+  border-top: 1px solid $color-gray-05;
+  display: flex;
+  justify-content: flex-end;
+  margin-left: -16px;
+  margin-right: -16px;
+  margin-top: -14px;
+  padding-left: 16px;
+  padding-right: 16px;
+  padding-top: 16px;
+
+  &--cancel {
+    @include font-body-1-bold;
+    border: none;
+    border-radius: 4px;
+    outline: none;
+    padding: 7px 14px;
+
+    @include mouse-mode {
+      &:hover {
+        background: $color-gray-15;
+      }
+    }
+
+    @include keyboard-mode {
+      &:focus {
+        box-shadow: 0px 0px 0px 2px $ultramarine-ui-light;
+      }
+    }
+
+    @include light-theme {
+      background-color: $color-gray-05;
+      color: $ultramarine-ui-light;
+    }
+
+    @include dark-theme {
+      background-color: $color-gray-75;
+      color: $ultramarine-ui-dark;
+    }
+  }
+
+  &--confirm {
+    @include font-body-1-bold;
+    background: $ultramarine-ui-light;
+    border: none;
+    border-radius: 4px;
+    color: $color-white;
+    margin-left: 12px;
+    outline: none;
+    padding: 7px 14px;
+
+    @include mouse-mode {
+      &:hover {
+        background: $ultramarine-brand-dark;
+      }
+    }
+
+    @include keyboard-mode {
+      &:focus {
+        box-shadow: 0px 0px 0px 2px $ultramarine-brand-dark;
+      }
+    }
+  }
+}
+
+/* Safety Number verification */
+
+.module-safety-number {
+  &__icon {
+    height: 1.25em;
+    width: 1.25em;
+    vertical-align: text-bottom;
+    display: inline-block;
+  }
+
+  &__verification-label {
+    margin: 10px 0;
+  }
+
+  &__icon--verified {
+    display: inline-block;
+    height: 1.25em;
+    margin-right: 4px;
+    vertical-align: text-bottom;
+    width: 1.25em;
+
+    @include light-theme {
+      -webkit-mask: url('../images/icons/v2/check-24.svg') no-repeat center;
+      -webkit-mask-size: 100%;
+      background-color: #121212;
+    }
+
+    @include dark-theme {
+      -webkit-mask: url('../images/icons/v2/check-24.svg') no-repeat center;
+      -webkit-mask-size: 100%;
+      background-color: #f6f6f6;
+    }
+  }
+
+  &__icon--shield {
+    display: inline-block;
+    height: 1.25em;
+    margin-right: 4px;
+    vertical-align: text-bottom;
+    width: 1.25em;
+
+    @include light-theme {
+      -webkit-mask: url('../images/icons/v2/safety-number-outline-24.svg')
+        no-repeat center;
+      -webkit-mask-size: 100%;
+      background-color: #121212;
+    }
+
+    @include dark-theme {
+      -webkit-mask: url('../images/icons/v2/safety-number-solid-24.svg')
+        no-repeat center;
+      -webkit-mask-size: 100%;
+      background-color: #f6f6f6;
+    }
+  }
+
+  &__verify-container {
+    text-align: center;
+  }
+
+  &__button--verify {
+    border-radius: 5px;
+    font-weight: bold;
+    margin: 0;
+    outline: none;
+    padding: 10px;
+  }
+
+  &__number {
+    background: #f6f6f6;
+    border-radius: 5px;
+    border: solid 1px #dedede;
+    font-family: monospace;
+    margin: 20px auto 20px auto;
+    padding: 10px;
+    text-align: center;
+    width: 16em;
+
+    @include dark-theme {
+      background: #1b1b1b;
+      border: solid 1px #848484;
+      color: #f6f6f6;
+    }
+  }
+
+  &__verification-status {
+    margin: 30px 0 10px;
+    text-align: center;
+  }
+
+  &__close-button {
+    display: flex;
+    justify-content: flex-end;
+
+    button {
+      background: inherit;
+      border: none;
+      cursor: pointer;
+      padding: 0;
+
+      @include keyboard-mode {
+        &:focus {
+          border: 1px solid $ultramarine-ui-light;
+        }
+      }
+
+      span {
+        display: inline-block;
+        height: 24px;
+        width: 24px;
+
+        @include light-theme {
+          @include color-svg('../images/icons/v2/x-24.svg', $color-gray-60);
+        }
+        @include dark-theme {
+          @include color-svg('../images/icons/v2/x-24.svg', $color-gray-05);
+        }
+      }
     }
   }
 }
@@ -4616,17 +8177,24 @@ $timer-icons: '55', '50', '45', '40', '35', '30', '25', '20', '15', '10', '05',
   background: none;
   margin-right: 4px;
 
+  outline: none;
+
   &:active,
   &:focus {
-    outline: none;
+    @include keyboard-mode {
+      background: $color-gray-05;
+    }
+    @include dark-keyboard-mode {
+      background: $color-gray-60;
+    }
   }
 
   &--selected {
     @include light-theme {
-      background: $color-gray-05;
+      background: $color-gray-15;
     }
     @include dark-theme {
-      background: $color-gray-60;
+      background: $color-gray-45;
     }
   }
 
@@ -4759,16 +8327,15 @@ $timer-icons: '55', '50', '45', '40', '35', '30', '25', '20', '15', '10', '05',
       width: 14px;
       height: 14px;
       border-radius: 7px;
-      background: $color-signal-blue;
+      background: $ultramarine-ui-light;
     }
   }
 }
 
 .module-sticker-picker__header__button__image {
-  min-width: 20px;
-  min-height: 20px;
-  max-width: 20px;
-  max-height: 20px;
+  width: 20px;
+  height: 20px;
+  object-fit: contain;
 }
 
 .module-sticker-picker__header__button__image--placeholder {
@@ -4811,10 +8378,15 @@ $timer-icons: '55', '50', '45', '40', '35', '30', '25', '20', '15', '10', '05',
     justify-content: center;
     align-items: center;
 
+    @include mouse-mode {
+      outline: none;
+    }
+
     &__image,
     &__placeholder {
       width: 100%;
       height: 100%;
+      object-fit: contain;
     }
 
     &__placeholder {
@@ -4866,11 +8438,11 @@ $timer-icons: '55', '50', '45', '40', '35', '30', '25', '20', '15', '10', '05',
 
     &--hint {
       @include light-theme() {
-        color: $color-signal-blue;
+        color: $ultramarine-ui-light;
       }
 
       @include dark-theme() {
-        color: $color-signal-blue;
+        color: $ultramarine-ui-dark;
       }
     }
 
@@ -4886,6 +8458,7 @@ $timer-icons: '55', '50', '45', '40', '35', '30', '25', '20', '15', '10', '05',
 
 .module-sticker-manager {
   padding: 0 16px;
+  outline: none;
 }
 
 .module-sticker-manager__text {
@@ -4933,14 +8506,50 @@ $timer-icons: '55', '50', '45', '40', '35', '30', '25', '20', '15', '10', '05',
   }
 }
 
+%blessed-sticker-pack-icon {
+  height: 14px;
+  width: 14px;
+  border-radius: 8px;
+  background-color: $color-white;
+  display: inline-block;
+  vertical-align: middle;
+  margin: {
+    left: 5px;
+    bottom: 2px;
+  }
+  position: relative;
+
+  &::before {
+    content: '';
+    display: block;
+    width: 16px;
+    height: 16px;
+    position: absolute;
+    top: -1px;
+    left: -1px;
+
+    @include light-theme {
+      @include color-svg(
+        '../images/icons/v2/check-circle-solid-24.svg',
+        $color-accent-blue
+      );
+    }
+
+    @include dark-theme {
+      @include color-svg(
+        '../images/icons/v2/check-circle-solid-24.svg',
+        $color-accent-blue
+      );
+    }
+  }
+}
+
 .module-sticker-manager__pack-row {
+  @include button-reset;
+
   display: flex;
   flex-direction: row;
-  padding: 16px 0;
-
-  &:hover {
-    cursor: pointer;
-  }
+  padding: 16px;
 
   @include light-theme {
     & + & {
@@ -4954,9 +8563,16 @@ $timer-icons: '55', '50', '45', '40', '35', '30', '25', '20', '15', '10', '05',
     }
   }
 
+  @include keyboard-mode {
+    &:focus {
+      box-shadow: 0px 0px 0px 2px $ultramarine-ui-light;
+    }
+  }
+
   &__cover {
     width: 48px;
     height: 48px;
+    object-fit: contain;
   }
   &__cover-placeholder {
     width: 48px;
@@ -4990,12 +8606,7 @@ $timer-icons: '55', '50', '45', '40', '35', '30', '25', '20', '15', '10', '05',
     }
 
     &__blessed-icon {
-      height: 16px;
-      width: 16px;
-      display: inline-block;
-      margin-left: 3px;
-      vertical-align: top;
-      background-image: url('../images/check-circle-filled-16.svg');
+      @extend %blessed-sticker-pack-icon;
     }
   }
 
@@ -5052,13 +8663,17 @@ $timer-icons: '55', '50', '45', '40', '35', '30', '25', '20', '15', '10', '05',
     background: $color-gray-75;
   }
 
+  @include mouse-mode {
+    outline: none;
+  }
+
   &--blue {
     @include light-theme {
-      background: $color-signal-blue;
+      background: $ultramarine-ui-light;
       color: $color-white;
     }
     @include dark-theme {
-      background: $color-signal-blue;
+      background: $ultramarine-ui-dark;
       color: $color-white;
     }
   }
@@ -5157,10 +8772,14 @@ $timer-icons: '55', '50', '45', '40', '35', '30', '25', '20', '15', '10', '05',
       &__cell {
         width: 96px;
         height: 96px;
+        display: flex;
+        justify-content: center;
+        align-items: center;
 
         &__image {
           width: 100%;
           height: 100%;
+          object-fit: contain;
         }
 
         &--placeholder {
@@ -5198,13 +8817,17 @@ $timer-icons: '55', '50', '45', '40', '35', '30', '25', '20', '15', '10', '05',
       }
 
       &__info {
-        flex-grow: 1;
         display: flex;
         flex-direction: column;
         justify-content: center;
+        flex-grow: 1;
+        flex-shrink: 1;
+        overflow: hidden;
 
         &__title {
           margin: 0;
+          overflow: hidden;
+          text-overflow: ellipsis;
 
           @include font-body-1-bold;
 
@@ -5219,7 +8842,9 @@ $timer-icons: '55', '50', '45', '40', '35', '30', '25', '20', '15', '10', '05',
 
         &__author {
           margin: 0;
-          height: 18px;
+          overflow: hidden;
+          white-space: nowrap;
+          text-overflow: ellipsis;
 
           @include light-theme {
             color: $color-gray-45;
@@ -5231,24 +8856,13 @@ $timer-icons: '55', '50', '45', '40', '35', '30', '25', '20', '15', '10', '05',
         }
 
         &__blessed-icon {
-          height: 16px;
-          width: 16px;
-          display: inline-block;
-          margin-left: 3px;
-          vertical-align: top;
-
-          @include light-theme {
-            background-image: url('../images/check-circle-filled-16.svg');
-          }
-
-          @include dark-theme {
-            background-image: url('../images/check-circle-filled-16.svg');
-          }
+          @extend %blessed-sticker-pack-icon;
         }
       }
 
       &__install {
-        flex-shrink: 1;
+        flex-shrink: 0;
+        overflow: hidden;
       }
     }
   }
@@ -5275,9 +8889,12 @@ $timer-icons: '55', '50', '45', '40', '35', '30', '25', '20', '15', '10', '05',
   align-items: center;
   opacity: 0.5;
 
+  &:focus,
   &:hover {
     opacity: 1;
   }
+
+  outline: none;
 
   &::after {
     display: block;
@@ -5289,13 +8906,13 @@ $timer-icons: '55', '50', '45', '40', '35', '30', '25', '20', '15', '10', '05',
     @include light-theme {
       @include color-svg(
         '../images/icons/v2/sticker-outline-24.svg',
-        $color-gray-60
+        $color-gray-75
       );
     }
     @include dark-theme {
       @include color-svg(
         '../images/icons/v2/sticker-solid-24.svg',
-        $color-gray-25
+        $color-gray-15
       );
     }
   }
@@ -5314,6 +8931,8 @@ $timer-icons: '55', '50', '45', '40', '35', '30', '25', '20', '15', '10', '05',
 }
 
 .module-sticker-button__tooltip {
+  @include button-reset;
+
   height: 34px;
   display: flex;
   justify-content: center;
@@ -5360,6 +8979,7 @@ $timer-icons: '55', '50', '45', '40', '35', '30', '25', '20', '15', '10', '05',
   &__image {
     width: 20px;
     height: 20px;
+    object-fit: contain;
   }
   &__image-placeholder {
     width: 20px;
@@ -5390,11 +9010,10 @@ $timer-icons: '55', '50', '45', '40', '35', '30', '25', '20', '15', '10', '05',
     display: flex;
     flex-direction: row;
 
-    // &__image {
-    //   width: 52px;
-    //   height: 52px;
-    //   background: $color-gray-05;
-    // }
+    &__image {
+      width: 52px;
+      height: 52px;
+    }
 
     &__meta {
       flex-grow: 1;
@@ -5456,7 +9075,8 @@ $timer-icons: '55', '50', '45', '40', '35', '30', '25', '20', '15', '10', '05',
     display: flex;
     justify-content: center;
     align-items: center;
-    z-index: 5;
+    // THIS Z-INDEX IS OVER NINE THOUSAND. OVER NINE THOUSAND?! THAT CAN'T BE!
+    z-index: 9001;
   }
 
   &__container {
@@ -5471,29 +9091,39 @@ $timer-icons: '55', '50', '45', '40', '35', '30', '25', '20', '15', '10', '05',
     }
 
     @include dark-theme() {
-      background: $color-gray-75;
+      background: $color-gray-80;
       color: $color-gray-05;
     }
 
+    &__title {
+      @include font-body-1-bold;
+    }
+
     &__content {
-      margin-bottom: 20px;
+      @include font-body-1;
     }
 
     &__buttons {
+      margin-top: 22px;
+
       display: flex;
       flex-direction: row;
       justify-content: flex-end;
 
       &__button {
         margin-left: 4px;
-        border-radius: 14px;
-        height: 28px;
+        border-radius: 17px;
+        height: 34px;
         padding: 5px 12px;
         display: flex;
         justify-content: center;
         align-items: center;
 
         @include font-body-1-bold;
+
+        @include mouse-mode {
+          outline: none;
+        }
 
         @include light-theme() {
           background: $color-white;
@@ -5535,6 +9165,79 @@ $timer-icons: '55', '50', '45', '40', '35', '30', '25', '20', '15', '10', '05',
           }
         }
       }
+    }
+  }
+}
+
+.module-left-pane-dialog {
+  background: $color-accent-green;
+  color: $color-white;
+  padding: 16px;
+
+  .module-left-pane-dialog__message {
+    h3 {
+      @include font-body-1-bold;
+      padding: 0px;
+      margin: 0px;
+      margin-bottom: 8px;
+    }
+    span {
+      @include font-body-1;
+      display: inline-block;
+    }
+  }
+
+  .module-left-pane-dialog__actions {
+    margin-top: 8px;
+    text-align: right;
+
+    .module-left-pane-dialog__link {
+      @include keyboard-mode {
+        display: inline-block;
+        outline: 0;
+      }
+    }
+
+    button {
+      background: inherit;
+      border-radius: 20px;
+      border: solid 1px $color-white;
+      color: $color-white;
+      cursor: pointer;
+      font-family: inherit;
+      margin: 0 4px;
+      padding: 8px 16px;
+      outline: 0;
+
+      &:focus {
+        @include keyboard-mode {
+          box-shadow: 0 0 0 3px $ultramarine-ui-light;
+        }
+      }
+
+      &:hover {
+        @include mouse-mode {
+          box-shadow: 0 0 0 3px $ultramarine-ui-light;
+        }
+      }
+    }
+
+    .module-left-pane-dialog__button--no-border {
+      border: none;
+    }
+  }
+
+  &.module-left-pane-dialog--error {
+    background-color: $color-accent-red;
+  }
+
+  &.module-left-pane-dialog--warning {
+    background-color: $color-accent-yellow;
+    color: $color-black;
+
+    button {
+      border-color: $color-black;
+      color: $color-black;
     }
   }
 }
@@ -5613,7 +9316,7 @@ $timer-icons: '55', '50', '45', '40', '35', '30', '25', '20', '15', '10', '05',
           border-color: $color-gray-60;
 
           &:focus {
-            border-color: $color-signal-blue;
+            border-color: $ultramarine-ui-light;
           }
 
           &:placeholder {
@@ -5627,7 +9330,7 @@ $timer-icons: '55', '50', '45', '40', '35', '30', '25', '20', '15', '10', '05',
           color: $color-gray-05;
 
           &:focus {
-            border-color: $color-signal-blue;
+            border-color: $ultramarine-ui-light;
           }
 
           &:placeholder {
@@ -5653,6 +9356,10 @@ $timer-icons: '55', '50', '45', '40', '35', '30', '25', '20', '15', '10', '05',
     justify-content: center;
     align-items: center;
     background: none;
+
+    @include mouse-mode {
+      outline: none;
+    }
 
     &--footer {
       &:not(:first-of-type) {
@@ -5769,6 +9476,7 @@ $timer-icons: '55', '50', '45', '40', '35', '30', '25', '20', '15', '10', '05',
 
   &__body {
     padding: 8px 16px 0 12px;
+    outline: none;
 
     &__emoji-cell {
       display: flex;
@@ -5782,6 +9490,7 @@ $timer-icons: '55', '50', '45', '40', '35', '30', '25', '20', '15', '10', '05',
       padding: 0;
       justify-content: center;
       align-items: center;
+      @include font-body-1;
 
       @include light-theme {
         color: $color-gray-60;
@@ -5816,9 +9525,12 @@ $timer-icons: '55', '50', '45', '40', '35', '30', '25', '20', '15', '10', '05',
   align-items: center;
   opacity: 0.5;
 
+  &:focus,
   &:hover {
     opacity: 1;
   }
+
+  outline: none;
 
   &::after {
     display: block;
@@ -5830,13 +9542,13 @@ $timer-icons: '55', '50', '45', '40', '35', '30', '25', '20', '15', '10', '05',
     @include light-theme {
       @include color-svg(
         '../images/icons/v2/emoji-smiley-outline-24.svg',
-        $color-gray-60
+        $color-gray-75
       );
     }
     @include dark-theme {
       @include color-svg(
         '../images/icons/v2/emoji-smiley-solid-24.svg',
-        $color-gray-25
+        $color-gray-15
       );
     }
   }
@@ -5869,12 +9581,16 @@ $timer-icons: '55', '50', '45', '40', '35', '30', '25', '20', '15', '10', '05',
     width: $size;
     height: $size;
     transform: translate3d(0, 0, 0);
+    vertical-align: baseline;
   }
 }
 
 .module-emoji {
-  display: block;
+  display: flex;
+  justify-content: center;
+  align-items: center;
   color: transparent;
+  font-family: auto;
 
   @include light-theme() {
     caret-color: $color-gray-90;
@@ -5887,8 +9603,10 @@ $timer-icons: '55', '50', '45', '40', '35', '30', '25', '20', '15', '10', '05',
   @include emoji-size(16px);
   @include emoji-size(18px);
   @include emoji-size(20px);
+  @include emoji-size(24px);
   @include emoji-size(28px);
   @include emoji-size(32px);
+  @include emoji-size(48px);
   @include emoji-size(64px);
   @include emoji-size(66px);
 }
@@ -5896,7 +9614,6 @@ $timer-icons: '55', '50', '45', '40', '35', '30', '25', '20', '15', '10', '05',
 // Module: Unsupported Message
 
 .module-unsupported-message {
-  margin-top: 14px;
   text-align: center;
 }
 
@@ -5953,9 +9670,10 @@ $timer-icons: '55', '50', '45', '40', '35', '30', '25', '20', '15', '10', '05',
 }
 
 .module-unsupported-message__button {
+  @include button-reset;
+
   margin-top: 5px;
   display: inline-block;
-  cursor: pointer;
 
   @include font-body-1-bold;
 
@@ -5963,11 +9681,11 @@ $timer-icons: '55', '50', '45', '40', '35', '30', '25', '20', '15', '10', '05',
   border-radius: 4px;
 
   @include light-theme {
-    color: $color-signal-blue;
+    color: $ultramarine-ui-light;
     background-color: $color-gray-02;
   }
   @include dark-theme {
-    color: $color-signal-blue;
+    color: $ultramarine-ui-dark;
     background-color: $color-gray-75;
   }
 }
@@ -6009,20 +9727,58 @@ $timer-icons: '55', '50', '45', '40', '35', '30', '25', '20', '15', '10', '05',
 
 // Module: CompositionInput
 .module-composition-input {
-  &__input {
-    @include font-body-1;
+  &__quill {
+    height: 100%;
 
+    .ql-editor {
+      caret-color: transparent;
+      padding: 0;
+      text-align: start;
+
+      &--loaded {
+        caret-color: auto;
+      }
+
+      &.ql-blank::before {
+        left: 0;
+        right: 0;
+        font-style: normal;
+      }
+
+      .emoji-blot {
+        width: 20px;
+        height: 20px;
+        vertical-align: text-bottom;
+      }
+    }
+  }
+
+  &__at-mention {
+    background-color: $color-gray-20;
+    border-radius: 4px;
+    display: inline;
+    padding-left: 4px;
+    padding-right: 4px;
+    height: 22px;
+    line-height: 22px;
+
+    @include dark-theme {
+      background-color: $color-gray-60;
+    }
+  }
+
+  &__input {
     border: none;
     border-radius: 18px;
     overflow: hidden;
     word-break: break-word;
 
-    &:placeholder {
-      color: $color-gray-45;
+    // Override Quill styles
+    .ql-container {
+      @include font-body-1;
     }
 
-    // Override draft.js styles
-    .public-DraftEditorPlaceholder-root {
+    .ql-blank::before {
       color: $color-gray-45;
     }
 
@@ -6057,7 +9813,8 @@ $timer-icons: '55', '50', '45', '40', '35', '30', '25', '20', '15', '10', '05',
 
       &--large {
         max-height: 227px;
-        height: 227px;
+        min-height: 227px;
+
         .DraftEditor-root {
           height: 227px - 2 * 7px; // subtract padding
         }
@@ -6066,20 +9823,26 @@ $timer-icons: '55', '50', '45', '40', '35', '30', '25', '20', '15', '10', '05',
 
     &:focus-within {
       @include light-theme() {
-        border: 1px solid $color-signal-blue;
+        border: 1px solid $ultramarine-ui-light;
       }
 
       @include dark-theme() {
-        border: 1px solid $color-signal-blue;
+        border: 1px solid $ultramarine-ui-light;
       }
     }
   }
 
-  &__emoji-suggestions {
-    padding: 12px 0;
+  &__suggestions {
+    padding: 0;
     margin-bottom: 6px;
     border-radius: 8px;
     z-index: 2;
+    overflow: hidden;
+
+    &--scroller {
+      max-height: 300px;
+      overflow-y: auto;
+    }
 
     @include popper-shadow();
 
@@ -6092,7 +9855,7 @@ $timer-icons: '55', '50', '45', '40', '35', '30', '25', '20', '15', '10', '05',
     }
 
     &__row {
-      height: 30px;
+      height: 34px;
       padding: 0 12px;
       display: flex;
       flex-direction: row;
@@ -6101,6 +9864,14 @@ $timer-icons: '55', '50', '45', '40', '35', '30', '25', '20', '15', '10', '05',
       background: none;
       border: none;
       width: 100%;
+
+      &--mention {
+        height: 40px;
+      }
+
+      &:focus {
+        outline: 0;
+      }
 
       @include font-body-2;
 
@@ -6129,6 +9900,11 @@ $timer-icons: '55', '50', '45', '40', '35', '30', '25', '20', '15', '10', '05',
         }
       }
     }
+
+    &__title {
+      padding-left: 8px;
+    }
+
     stroke: $color-white;
   }
 }
@@ -6169,6 +9945,11 @@ $timer-icons: '55', '50', '45', '40', '35', '30', '25', '20', '15', '10', '05',
     }
     &--large-right {
       margin-left: auto;
+      margin-right: 4px;
+    }
+    &--large-right-mic-active {
+      margin-left: auto;
+      margin-right: 12px;
     }
   }
   &__send-button {
@@ -6185,7 +9966,10 @@ $timer-icons: '55', '50', '45', '40', '35', '30', '25', '20', '15', '10', '05',
       width: 24px;
       height: 24px;
       flex-shrink: 0;
-      @include color-svg('../images/icons/v2/send-24.svg', $color-signal-blue);
+      @include color-svg(
+        '../images/icons/v2/send-24.svg',
+        $ultramarine-ui-light
+      );
     }
   }
   &__input {
@@ -6199,12 +9983,14 @@ $timer-icons: '55', '50', '45', '40', '35', '30', '25', '20', '15', '10', '05',
     left: calc(50% - 24px);
     top: -18px;
     border-radius: 12px 12px 0 0;
+    pointer-events: none;
 
     opacity: 0;
     transition: opacity 200ms ease-out;
 
     #{$comp-area}:hover & {
       opacity: 1;
+      pointer-events: all;
     }
 
     @include light-theme() {
@@ -6331,10 +10117,10 @@ $timer-icons: '55', '50', '45', '40', '35', '30', '25', '20', '15', '10', '05',
 }
 
 .module-scroll-down__button--new-messages {
-  background-color: $color-signal-blue;
+  background-color: $ultramarine-ui-light;
 
   &:hover {
-    background-color: $color-ios-blue-shade;
+    background-color: $ultramarine-brand-dark;
   }
 }
 
@@ -6427,6 +10213,11 @@ $timer-icons: '55', '50', '45', '40', '35', '30', '25', '20', '15', '10', '05',
     &:hover {
       background-color: $color-gray-05;
     }
+  }
+  @include keyboard-mode {
+    &:hover {
+      background-color: inherit;
+    }
     &:focus {
       background-color: $color-gray-05;
     }
@@ -6435,8 +10226,13 @@ $timer-icons: '55', '50', '45', '40', '35', '30', '25', '20', '15', '10', '05',
     &:hover {
       background-color: $color-gray-60;
     }
+  }
+  @include dark-keyboard-mode {
+    &:hover {
+      background-color: inherit;
+    }
     &:focus {
-      background-color: $color-gray-05;
+      background-color: $color-gray-60;
     }
   }
 }
@@ -6480,24 +10276,1200 @@ $timer-icons: '55', '50', '45', '40', '35', '30', '25', '20', '15', '10', '05',
   margin-left: 8px;
 }
 
+// Module: Shortcut Guide Modal
+
+.module-shortcut-guide-modal {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+
+  padding: 20px;
+
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+
+  background-color: $color-black-alpha-40;
+
+  // react-contextmenu uses a z-index of 1000
+  z-index: 2000;
+}
+
+.module-shortcut-guide-container {
+  flex-grow: 1;
+  overflow: hidden;
+}
+
+// Module: Shortcut Guide
+
+.module-shortcut-guide {
+  border-radius: 4px;
+  padding: 16px;
+
+  max-height: calc(100vh - 40px);
+  max-width: 1150px;
+  margin-left: auto;
+  margin-right: auto;
+
+  display: flex;
+  flex-direction: column;
+
+  @include popper-shadow;
+
+  @include light-theme {
+    color: $color-gray-90;
+    background-color: $color-white;
+  }
+  @include dark-theme {
+    color: $color-gray-05;
+    background-color: $color-gray-75;
+
+    ::-webkit-scrollbar-thumb {
+      border: 2px solid $color-gray-75;
+    }
+  }
+}
+
+.module-shortcut-guide__header {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+
+  margin-bottom: 20px;
+}
+
+.module-shortcut-guide__header-text {
+  @include font-title-2;
+
+  flex-grow: 1;
+}
+.module-shortcut-guide__header-close {
+  @include button-reset;
+
+  height: 24px;
+  width: 24px;
+
+  @include light-theme {
+    @include color-svg('../images/icons/v2/x-24.svg', $color-gray-60);
+  }
+  @include dark-theme {
+    @include color-svg('../images/icons/v2/x-24.svg', $color-gray-05);
+  }
+
+  &:focus {
+    @include keyboard-mode {
+      @include color-svg('../images/icons/v2/x-24.svg', $ultramarine-ui-light);
+    }
+    @include dark-keyboard-mode {
+      @include color-svg('../images/icons/v2/x-24.svg', $ultramarine-ui-dark);
+    }
+  }
+}
+
+.module-shortcut-guide__section-header {
+  @include font-body-1-bold;
+
+  margin-bottom: 8px;
+}
+
+.module-shortcut-guide__scroll-container {
+  outline: none;
+  overflow-y: scroll;
+}
+
+.module-shortcut-guide__section {
+  &:not(:last-child) {
+    margin-bottom: 25px;
+  }
+}
+
+@media (min-width: 900px) {
+  .module-shortcut-guide__section-list {
+    column-count: 2;
+    column-gap: 20px;
+    column-span: none;
+    column-fill: auto;
+  }
+}
+
+.module-shortcut-guide__shortcut {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  break-inside: avoid;
+
+  padding-left: 4px;
+  min-height: 40px;
+  outline: none;
+
+  &:focus {
+    @include keyboard-mode {
+      background-color: $color-gray-05;
+    }
+    @include dark-keyboard-mode {
+      background-color: $color-gray-90;
+    }
+  }
+
+  @include light-theme {
+    border-bottom: 1px solid $color-gray-05;
+  }
+  @include dark-theme {
+    border-bottom: 1px solid $color-gray-90;
+  }
+}
+
+.module-shortcut-guide__shortcut__description {
+  flex-grow: 1;
+  margin-top: 4px;
+  margin-bottom: 4px;
+}
+.module-shortcut-guide__shortcut__key-container {
+  margin-bottom: 4px;
+}
+.module-shortcut-guide__shortcut__key-inner-container {
+  text-align: right;
+  margin-top: 4px;
+  margin-right: 4px;
+  white-space: nowrap;
+}
+
+.module-shortcut-guide__shortcut__key {
+  display: inline-block;
+
+  border-radius: 2px;
+  padding: 3px;
+  padding-left: 8px;
+  padding-right: 8px;
+  margin-left: 4px;
+
+  height: 30px;
+  text-align: center;
+
+  @include light-theme {
+    border: 1px solid $color-gray-15;
+  }
+  @include dark-theme {
+    border: 1px solid $color-gray-90;
+  }
+}
+
+.module-shortcut-guide__shortcut__key--square {
+  width: 30px;
+  padding-left: 0px;
+  padding-right: 0px;
+}
+
+// Module: Profile Change Notification
+
+.module-profile-change-notification {
+  @include font-body-1;
+
+  margin-left: 2em;
+  margin-right: 2em;
+
+  text-align: center;
+
+  @include light-theme {
+    color: $color-gray-60;
+  }
+  @include dark-theme {
+    color: $color-gray-05;
+  }
+}
+
+.module-profile-change-notification--icon {
+  @include light-theme {
+    @include color-svg(
+      '../images/icons/v2/profile-outline-20.svg',
+      $color-gray-60
+    );
+  }
+  @include dark-theme {
+    @include color-svg(
+      '../images/icons/v2/profile-outline-20.svg',
+      $color-gray-05
+    );
+  }
+
+  height: 20px;
+  width: 20px;
+
+  margin-left: auto;
+  margin-right: auto;
+}
+
+/* Calling: Device Selection */
+
+.module-calling-device-selection {
+  position: relative;
+}
+
+.module-calling-device-selection__close-button {
+  @include button-reset;
+
+  @include color-svg('../images/x-shadow-16.svg', $color-white);
+
+  height: 16px;
+  position: absolute;
+  right: 5px;
+  top: 0;
+  width: 16px;
+  z-index: 2;
+
+  @include keyboard-mode {
+    &:focus {
+      outline: 2px solid $ultramarine-ui-light;
+    }
+  }
+}
+
+.module-calling-device-selection__title {
+  @include font-title-2;
+  margin-top: 12px;
+  margin-bottom: 20px;
+}
+
+.module-calling-device-selection__label {
+  @include font-body-1-bold;
+  display: block;
+  margin-bottom: 16px;
+}
+
+.module-calling-device-selection__select {
+  margin-bottom: 20px;
+  position: relative;
+
+  select {
+    @include font-body-1;
+    -webkit-appearance: none;
+    border-radius: 4px;
+    border: 1px solid $color-gray-45;
+    cursor: pointer;
+    height: 40px;
+    outline: 0;
+    padding: 10px;
+    padding-right: 32px;
+    text-overflow: ellipsis;
+    width: 100%;
+  }
+
+  &::after {
+    border: 2px solid $color-gray-75;
+
+    border-radius: 2px;
+    border-right: 0;
+    border-top: 0;
+    content: ' ';
+    display: block;
+    height: 10px;
+    pointer-events: none;
+    position: absolute;
+    right: 15px;
+    top: 16px;
+    transform-origin: center;
+    transform: rotate(-45deg);
+    width: 10px;
+    z-index: 2;
+  }
+}
+
+// Module: GroupV2 Change
+
+.module-group-v2-change {
+  @include font-body-1;
+
+  margin-left: 2em;
+  margin-right: 2em;
+
+  text-align: center;
+
+  @include light-theme {
+    color: $color-gray-60;
+  }
+  @include dark-theme {
+    color: $color-gray-05;
+  }
+}
+
+.module-group-v2-change--icon {
+  @include light-theme {
+    @include color-svg(
+      '../images/icons/v2/group-outline-20.svg',
+      $color-gray-60
+    );
+  }
+  @include dark-theme {
+    @include color-svg(
+      '../images/icons/v2/group-outline-20.svg',
+      $color-gray-05
+    );
+  }
+
+  height: 20px;
+  width: 20px;
+
+  margin-left: auto;
+  margin-right: auto;
+}
+
+// Module: GV1 Migration
+
+.module-group-v1-migration {
+  @include font-body-1;
+
+  margin-left: 2em;
+  margin-right: 2em;
+
+  text-align: center;
+
+  @include light-theme {
+    color: $color-gray-60;
+  }
+  @include dark-theme {
+    color: $color-gray-05;
+  }
+}
+
+.module-group-v1-migration--icon {
+  @include light-theme {
+    @include color-svg(
+      '../images/icons/v2/group-outline-20.svg',
+      $color-gray-60
+    );
+  }
+  @include dark-theme {
+    @include color-svg(
+      '../images/icons/v2/group-outline-20.svg',
+      $color-gray-05
+    );
+  }
+
+  height: 20px;
+  width: 20px;
+
+  margin-left: auto;
+  margin-right: auto;
+}
+
+.module-group-v1-migration--text {
+  margin-top: 8px;
+  margin-bottom: 8px;
+}
+
+.module-group-v1-migration--button {
+  @include button-reset;
+  @include font-body-2-bold;
+  border-radius: 4px;
+
+  padding: 8px;
+  padding-left: 40px;
+  padding-right: 40px;
+
+  @include button-light-blue-text;
+}
+
+// Module: GroupV1 Disabled Actions
+
+.module-group-v1-disabled-actions {
+  padding: 8px 16px 12px 16px;
+  max-width: 650px;
+  margin-left: auto;
+  margin-right: auto;
+
+  @include light-theme {
+    background: $color-white;
+  }
+
+  @include dark-theme {
+    background: $color-gray-95;
+  }
+}
+
+.module-group-v1-disabled-actions__message {
+  @include font-body-2;
+  text-align: center;
+  margin-bottom: 12px;
+
+  @include light-theme {
+    color: $color-gray-60;
+  }
+
+  @include dark-theme {
+    color: $color-gray-25;
+  }
+}
+
+.module-group-v1-disabled-actions__message__learn-more {
+  text-decoration: none;
+}
+
+.module-group-v1-disabled-actions__buttons {
+  display: flex;
+  flex-direction: row;
+  justify-content: center;
+}
+.module-group-v1-disabled-actions__buttons__button {
+  @include button-reset;
+  @include font-body-1-bold;
+
+  border-radius: 4px;
+
+  padding: 8px;
+  padding-left: 30px;
+  padding-right: 30px;
+
+  @include button-primary;
+}
+
+// Module: GroupV2 Pending Approval Actions
+
+.module-group-v2-pending-approval-actions {
+  padding: 8px 16px 12px 16px;
+  max-width: 650px;
+  margin-left: auto;
+  margin-right: auto;
+
+  @include light-theme {
+    background: $color-white;
+  }
+
+  @include dark-theme {
+    background: $color-gray-95;
+  }
+}
+
+.module-group-v2-pending-approval-actions__message {
+  @include font-body-2;
+  text-align: center;
+  margin-bottom: 12px;
+
+  @include light-theme {
+    color: $color-gray-60;
+  }
+
+  @include dark-theme {
+    color: $color-gray-25;
+  }
+}
+
+.module-group-v2-pending-approval-actions__buttons {
+  display: flex;
+  flex-direction: row;
+  justify-content: center;
+}
+.module-group-v2-pending-approval-actions__buttons__button {
+  @include button-reset;
+  @include font-body-1-bold;
+
+  border-radius: 4px;
+
+  padding: 8px;
+  padding-left: 30px;
+  padding-right: 30px;
+
+  @include button-secondary;
+
+  @include light-theme {
+    color: $color-gray-60;
+    background-color: $color-gray-05;
+  }
+}
+
+// Module: Modal Host
+
+.module-modal-host__overlay {
+  background: $color-black-alpha-40;
+  position: absolute;
+
+  height: 100vh;
+  width: 100vw;
+
+  left: 0;
+  top: 0;
+
+  z-index: 2;
+
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+
+  overflow: hidden;
+  padding: 20px;
+}
+
+// Module: GV1 Migration Dialog
+
+.module-group-v2-migration-dialog {
+  @include font-body-1;
+  border-radius: 8px;
+  width: 360px;
+  margin-left: auto;
+  margin-right: auto;
+  padding: 20px;
+
+  max-height: 100%;
+
+  display: flex;
+  flex-direction: column;
+
+  position: relative;
+
+  @include light-theme {
+    background-color: $color-white;
+  }
+  @include dark-theme {
+    background-color: $color-gray-95;
+  }
+}
+.module-group-v2-migration-dialog__close-button {
+  @include button-reset;
+
+  position: absolute;
+  right: 12px;
+  top: 12px;
+
+  height: 24px;
+  width: 24px;
+
+  @include light-theme {
+    @include color-svg('../images/icons/v2/x-24.svg', $color-gray-75);
+  }
+
+  @include dark-theme {
+    @include color-svg('../images/icons/v2/x-24.svg', $color-gray-15);
+  }
+
+  &:focus {
+    @include keyboard-mode {
+      background-color: $ultramarine-ui-light;
+    }
+    @include dark-keyboard-mode {
+      background-color: $ultramarine-ui-dark;
+    }
+  }
+}
+.module-group-v2-migration-dialog__title {
+  @include font-title-2;
+  text-align: center;
+  margin-bottom: 20px;
+
+  flex-grow: 0;
+  flex-shrink: 0;
+}
+.module-group-v2-migration-dialog__scrollable {
+  overflow-x: scroll;
+  flex-grow: 1;
+  flex-shrink: 1;
+}
+.module-group-v2-migration-dialog__item {
+  display: flex;
+  flex-direction: row;
+  align-items: start;
+
+  &:not(:last-of-type) {
+    margin-bottom: 16px;
+  }
+}
+.module-group-v2-migration-dialog__item__bullet {
+  width: 4px;
+  height: 11px;
+  flex-grow: 0;
+  flex-shrink: 0;
+
+  margin-top: 5px;
+
+  @include light-theme {
+    background-color: $color-gray-15;
+  }
+  @include dark-theme {
+    background-color: $color-gray-65;
+  }
+}
+.module-group-v2-migration-dialog__item__content {
+  margin-left: 16px;
+}
+.module-group-v2-migration-dialog__member {
+  margin-top: 16px;
+}
+.module-group-v2-migration-dialog__member__name {
+  margin-left: 6px;
+}
+
+.module-group-v2-migration-dialog__buttons {
+  margin-top: 16px;
+
+  text-align: center;
+  flex-grow: 0;
+  flex-shrink: 0;
+
+  display: flex;
+}
+.module-group-v2-migration-dialog__buttons--narrow {
+  margin-left: auto;
+  margin-right: auto;
+  width: 152px;
+}
+.module-group-v2-migration-dialog__button {
+  @include button-reset;
+  @include font-body-1-bold;
+
+  // Start flex basis at zero so text width doesn't affect layout. We want the buttons
+  //   evenly distributed.
+  flex: 1 1 0px;
+
+  border-radius: 4px;
+
+  padding: 8px;
+  padding-left: 30px;
+  padding-right: 30px;
+
+  @include button-primary;
+
+  &:not(:first-of-type) {
+    margin-left: 16px;
+  }
+}
+
+.module-group-v2-migration-dialog__button--secondary {
+  @include button-secondary;
+}
+
+// Module: GroupV2 Join Dialog
+
+.module-group-v2-join-dialog {
+  @include font-body-1;
+  border-radius: 8px;
+  width: 360px;
+  margin-left: auto;
+  margin-right: auto;
+  padding: 20px;
+
+  position: relative;
+
+  @include light-theme {
+    background-color: $color-white;
+  }
+  @include dark-theme {
+    background-color: $color-gray-95;
+  }
+}
+.module-group-v2-join-dialog__close-button {
+  @include button-reset;
+
+  position: absolute;
+  right: 12px;
+  top: 12px;
+
+  height: 24px;
+  width: 24px;
+
+  @include light-theme {
+    @include color-svg('../images/icons/v2/x-24.svg', $color-gray-75);
+  }
+
+  @include dark-theme {
+    @include color-svg('../images/icons/v2/x-24.svg', $color-gray-15);
+  }
+
+  &:focus {
+    @include keyboard-mode {
+      background-color: $ultramarine-ui-light;
+    }
+    @include dark-keyboard-mode {
+      background-color: $ultramarine-ui-dark;
+    }
+  }
+}
+.module-group-v2-join-dialog__title {
+  @include font-title-2;
+  text-align: center;
+  margin-top: 12px;
+  margin-bottom: 2px;
+}
+.module-group-v2-join-dialog__avatar {
+  text-align: center;
+}
+.module-group-v2-join-dialog__metadata {
+  text-align: center;
+}
+.module-group-v2-join-dialog__prompt {
+  margin-top: 40px;
+}
+.module-group-v2-join-dialog__buttons {
+  margin-top: 16px;
+
+  text-align: center;
+
+  display: flex;
+}
+.module-group-v2-join-dialog__button {
+  @include button-reset;
+  @include font-body-1-bold;
+
+  // Start flex basis at zero so text width doesn't affect layout. We want the buttons
+  //   evenly distributed.
+  flex: 1 1 0px;
+
+  border-radius: 4px;
+
+  padding: 8px;
+  padding-left: 15px;
+  padding-right: 15px;
+
+  @include button-primary;
+
+  &:not(:first-of-type) {
+    margin-left: 16px;
+  }
+}
+
+.module-group-v2-join-dialog__button--secondary {
+  @include button-secondary;
+}
+
+// Module: Progress Dialog
+
+.module-progress-dialog {
+  width: 138px;
+  padding: 18px;
+  border-radius: 8px;
+  @include popper-shadow();
+
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+
+  @include light-theme() {
+    background: $color-white;
+    color: $color-gray-90;
+  }
+
+  @include dark-theme() {
+    background: $color-gray-80;
+    color: $color-gray-05;
+  }
+}
+
+.module-progress-dialog__spinner {
+  padding: 10px;
+}
+
+.module-progress-dialog__text {
+  @include font-body-2;
+}
+
+.module-progress-dialog__overlay {
+  background: $color-black-alpha-40;
+  position: fixed;
+  left: 0;
+  top: 0;
+  width: 100vw;
+  height: 100vh;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  z-index: 5;
+}
+
+// Module: Error Modal
+
+.module-error-modal__button-container {
+  margin-top: 10px;
+  display: flex;
+  flex-direction: row;
+  justify-content: flex-end;
+}
+
+.module-button {
+  &__small {
+    @include font-body-2;
+    @include button-reset;
+
+    @include keyboard-mode {
+      &:focus {
+        box-shadow: 0px 0px 0px 2px $ultramarine-ui-light;
+      }
+    }
+
+    @include light-theme {
+      color: $color-gray-90;
+      border-color: $color-gray-15;
+    }
+
+    @include dark-theme {
+      color: $color-gray-05;
+      border-color: $color-gray-65;
+    }
+
+    border-radius: 4px;
+    border-style: solid;
+    border-width: 1px;
+    outline: none;
+    padding: 7px 12px;
+  }
+
+  &__gray {
+    @include font-body-1-bold;
+    background-color: $color-gray-45;
+    border-radius: 4px;
+    border: none;
+    color: $color-white;
+    line-height: 24px;
+    outline: none;
+    padding: 7px 14px;
+
+    @include keyboard-mode {
+      &:focus {
+        box-shadow: 0px 0px 0px 2px $ultramarine-ui-light;
+      }
+    }
+  }
+
+  &__green {
+    @include font-body-1-bold;
+    background-color: $color-accent-green;
+    border-radius: 4px;
+    border: none;
+    color: $color-white;
+    line-height: 24px;
+    outline: none;
+    padding: 7px 14px;
+
+    @include keyboard-mode {
+      &:focus {
+        box-shadow: 0px 0px 0px 2px $ultramarine-ui-light;
+      }
+    }
+  }
+}
+
+// Module: Group Contact Details
+
+$contact-modal-padding: 18px;
+.module-contact-modal {
+  @include font-body-2;
+
+  min-width: 280px;
+  padding: $contact-modal-padding;
+  border-radius: 8px;
+  overflow: hidden;
+  @include popper-shadow();
+
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+
+  @include light-theme() {
+    background: $color-white;
+    color: $color-gray-90;
+  }
+
+  @include dark-theme() {
+    background: $color-gray-75;
+    color: $color-gray-05;
+  }
+
+  &__overlay {
+    background: $color-black-alpha-40;
+    position: fixed;
+    left: 0;
+    top: 0;
+    width: 100vw;
+    height: 100vh;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    z-index: 5;
+  }
+}
+
+.module-contact-modal__name {
+  @include font-title-2;
+
+  margin-top: 6px;
+}
+
+.module-contact-modal__profile-and-number {
+  color: $color-gray-60;
+
+  @include dark-theme {
+    color: $color-gray-25;
+  }
+}
+
+.module-contact-modal__button-container {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  margin: 12px 0 15px -$contact-modal-padding;
+  width: calc(100% + (#{$contact-modal-padding} * 2));
+}
+
+.module-contact-modal__button {
+  @include button-reset;
+
+  display: flex;
+  align-items: center;
+  padding: 7px $contact-modal-padding;
+  width: 100%;
+
+  &:last-child {
+    margin-bottom: 0;
+  }
+
+  &:hover {
+    background-color: $color-gray-15;
+
+    @include dark-theme {
+      background-color: $color-gray-60;
+    }
+  }
+
+  &:focus {
+    @include keyboard-mode {
+      background-color: $color-gray-15;
+    }
+
+    @include dark-keyboard-mode {
+      background-color: $color-gray-60;
+    }
+  }
+}
+
+.module-contact-modal__bubble-icon {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  margin-right: 10px;
+  width: 20px;
+}
+
+.module-contact-modal__send-message__bubble-icon {
+  height: 16px;
+  width: 18px;
+
+  @include light-theme {
+    @include color-svg(
+      '../images/icons/v2/message-outline-24.svg',
+      $color-gray-75
+    );
+  }
+
+  @include dark-theme {
+    @include color-svg(
+      '../images/icons/v2/message-outline-24.svg',
+      $color-gray-15
+    );
+  }
+}
+
+.module-contact-modal__safety-number__bubble-icon {
+  height: 18px;
+  width: 17px;
+
+  @include light-theme {
+    @include color-svg(
+      '../images/icons/v2/safety-number-outline-24.svg',
+      $color-gray-75
+    );
+  }
+
+  @include dark-theme {
+    @include color-svg(
+      '../images/icons/v2/safety-number-outline-24.svg',
+      $color-gray-15
+    );
+  }
+}
+
+.module-contact-modal__make-admin__bubble-icon {
+  height: 16px;
+  width: 18px;
+
+  @include light-theme {
+    @include color-svg(
+      '../images/icons/v2/group-outline-20.svg',
+      $color-gray-75
+    );
+  }
+
+  @include dark-theme {
+    @include color-svg(
+      '../images/icons/v2/group-outline-20.svg',
+      $color-gray-15
+    );
+  }
+}
+
+.module-contact-modal__remove-from-group__bubble-icon {
+  height: 16px;
+  width: 16px;
+
+  @include light-theme {
+    @include color-svg(
+      '../images/icons/v2/leave-group-outline-16.svg',
+      $color-gray-75
+    );
+  }
+
+  @include dark-theme {
+    @include color-svg(
+      '../images/icons/v2/leave-group-outline-16.svg',
+      $color-gray-15
+    );
+  }
+}
+
+.module-contact-modal__close-button {
+  @include button-reset;
+
+  position: absolute;
+  top: 10px;
+  right: 12px;
+
+  width: 24px;
+  height: 24px;
+
+  @include color-svg('../images/icons/v2/x-24.svg', $color-gray-75);
+
+  @include dark-theme() {
+    @include color-svg('../images/icons/v2/x-24.svg', $color-gray-25);
+  }
+
+  &:focus {
+    @include keyboard-mode {
+      background-color: $ultramarine-ui-light;
+    }
+  }
+}
+
+.module-background-color {
+  &__default {
+    background-color: $color-black-alpha-40;
+  }
+
+  @each $color, $value in $conversation-colors {
+    &__#{$color} {
+      background-color: $value;
+    }
+  }
+}
+
+.module-tooltip {
+  --tooltip-text-color: #{$color-gray-75};
+  --tooltip-background-color: #{$color-gray-02};
+
+  @mixin tooltip-dark-theme-variables {
+    --tooltip-text-color: #{$color-gray-05};
+    --tooltip-background-color: #{$color-gray-65};
+  }
+  &--dark-theme {
+    @include tooltip-dark-theme-variables;
+  }
+  @include dark-theme {
+    @include tooltip-dark-theme-variables;
+  }
+
+  background-color: var(--tooltip-background-color);
+  border-radius: 8px;
+  color: var(--tooltip-text-color);
+  display: inline-block;
+  padding: 8px 21px;
+  position: fixed;
+  text-align: center;
+  z-index: 999;
+
+  .module-tooltip-arrow {
+    position: absolute;
+  }
+
+  .module-tooltip-arrow::after {
+    border: solid 6px transparent;
+    content: '';
+    display: block;
+    height: 0;
+    margin-left: -6px;
+    margin-top: -6px;
+    position: absolute;
+    width: 0;
+  }
+
+  &[data-placement='top'] {
+    margin-bottom: 12px;
+
+    .module-tooltip-arrow {
+      bottom: 0;
+    }
+
+    .module-tooltip-arrow::after {
+      bottom: -12px;
+      border-top-color: var(--tooltip-background-color);
+    }
+  }
+
+  &[data-placement='right'] {
+    margin-left: 12px;
+
+    .module-tooltip-arrow {
+      left: 0;
+    }
+
+    .module-tooltip-arrow::after {
+      left: -6px;
+      border-right-color: var(--tooltip-background-color);
+    }
+  }
+
+  &[data-placement='bottom'] {
+    margin-top: 12px;
+
+    .module-tooltip-arrow {
+      top: 0;
+    }
+
+    .module-tooltip-arrow::after {
+      top: -6px;
+      border-bottom-color: var(--tooltip-background-color);
+    }
+  }
+
+  &[data-placement='left'] {
+    margin-right: 12px;
+
+    .module-tooltip-arrow {
+      right: 0;
+    }
+
+    .module-tooltip-arrow::after {
+      right: -12px;
+      border-left-color: var(--tooltip-background-color);
+    }
+  }
+}
+
 /* Third-party module: react-contextmenu*/
 
 .react-contextmenu {
+  @include popper-shadow();
+
+  outline: none;
   border-radius: 4px;
-  min-width: 160px;
-  padding: 0px;
-  padding-top: 8px;
-  padding-bottom: 8px;
+  min-width: 220px;
+  padding: 6px 0;
   opacity: 0;
   user-select: none;
 
   @include light-theme {
-    background-color: $color-gray-02;
-    border: 1px solid $color-gray-02;
+    background-color: $color-white;
   }
   @include dark-theme {
-    background-color: $color-gray-90;
-    border: 1px solid $color-gray-60;
+    background-color: $color-gray-75;
   }
 }
 
@@ -6507,21 +11479,32 @@ $timer-icons: '55', '50', '45', '40', '35', '30', '25', '20', '15', '10', '05',
 }
 
 .react-contextmenu-item {
+  outline: none;
   cursor: pointer;
   white-space: nowrap;
 
   @include font-body-2;
 
-  padding-left: 16px;
-  padding-top: 3px;
-  padding-bottom: 2px;
-  padding-right: 16px;
+  padding: 7px 12px;
 
   @include light-theme {
     color: $color-gray-90;
   }
   @include dark-theme {
     color: $color-gray-02;
+  }
+
+  &--divider {
+    height: 1px;
+    margin: 6px 0;
+    padding: 0;
+
+    @include light-theme {
+      background-color: $color-gray-15;
+    }
+    @include dark-theme {
+      background-color: $color-gray-60;
+    }
   }
 }
 
@@ -6549,41 +11532,57 @@ $timer-icons: '55', '50', '45', '40', '35', '30', '25', '20', '15', '10', '05',
 
 .react-contextmenu-item.react-contextmenu-submenu
   > .react-contextmenu-item:after {
-  content: '\25B6';
+  content: ' ';
   display: inline-block;
+  height: 18px;
   position: absolute;
   right: 7px;
+  width: 12px;
 
   @include light-theme {
+    @include color-svg(
+      '../images/icons/v2/chevron-right-16.svg',
+      $color-gray-75
+    );
     color: $color-gray-90;
   }
   @include dark-theme {
+    @include color-svg(
+      '../images/icons/v2/chevron-right-16.svg',
+      $color-gray-15
+    );
     color: $color-gray-02;
   }
 }
 
 .react-contextmenu-item.react-contextmenu-item--active,
 .react-contextmenu-item.react-contextmenu-item--selected {
-  color: $color-white;
-
+  color: $color-black;
   @include light-theme {
-    background-color: $color-gray-25;
+    background-color: $color-gray-15;
   }
   @include dark-theme {
-    background-color: $color-gray-45;
+    background-color: $color-gray-60;
+    color: $color-white;
   }
 }
 
 .react-contextmenu-item.react-contextmenu-item--active.react-contextmenu-item--checked:before,
 .react-contextmenu-item.react-contextmenu-item--selected.react-contextmenu-item--checked:before {
-  color: $color-white;
+  color: $color-black;
+  @include dark-theme {
+    color: $color-white;
+  }
 }
 
 .react-contextmenu-item.react-contextmenu-submenu
   > .react-contextmenu-item.react-contextmenu-item--active:after,
 .react-contextmenu-item.react-contextmenu-submenu
   > .react-contextmenu-item.react-contextmenu-item--selected:after {
-  color: $color-white;
+  color: $color-black;
+  @include dark-theme {
+    color: $color-white;
+  }
 }
 
 // All media query widths have 300px added to account for the left pane
@@ -6596,16 +11595,154 @@ $timer-icons: '55', '50', '45', '40', '35', '30', '25', '20', '15', '10', '05',
 .module-message__buttons__reply {
   display: none;
 }
+.module-message__buttons__react {
+  display: none;
+}
 
 // To limit messages with things forcing them wider, like long attachment names
 .module-message__container {
-  max-width: 300px;
+  // 2px to allow for 1px border
+  max-width: 302px;
+
+  &--incoming {
+    align-self: flex-start;
+  }
+
+  &--outgoing {
+    align-self: flex-end;
+  }
+
+  &--with-reactions {
+    margin-bottom: -10px;
+  }
+
+  &--deleted-for-everyone {
+    font-style: italic;
+  }
 }
 
-/* Spec: container > 438px and container < 593px*/
+.module-message__context {
+  &--icon::before {
+    content: ' ';
+    display: inline-block;
+    height: 14px;
+    margin-right: 8px;
+    width: 14px;
+    vertical-align: middle;
+  }
+
+  &__download::before {
+    @include light-theme {
+      @include color-svg(
+        '../images/icons/v2/save-outline-24.svg',
+        $color-black
+      );
+    }
+
+    @include dark-theme {
+      @include color-svg(
+        '../images/icons/v2/save-solid-24.svg',
+        $color-gray-15
+      );
+    }
+  }
+
+  &__reply::before {
+    @include light-theme {
+      @include color-svg(
+        '../images/icons/v2/reply-outline-24.svg',
+        $color-black
+      );
+    }
+
+    @include dark-theme {
+      @include color-svg(
+        '../images/icons/v2/reply-solid-24.svg',
+        $color-gray-15
+      );
+    }
+  }
+
+  &__react::before {
+    @include light-theme {
+      @include color-svg(
+        '../images/icons/v2/add-emoji-outline-24.svg',
+        $color-black
+      );
+    }
+
+    @include dark-theme {
+      @include color-svg(
+        '../images/icons/v2/add-emoji-outline-24.svg',
+        $color-gray-15
+      );
+    }
+  }
+
+  &__more-info::before {
+    @include light-theme {
+      @include color-svg(
+        '../images/icons/v2/info-outline-24.svg',
+        $color-black
+      );
+    }
+
+    @include dark-theme {
+      @include color-svg(
+        '../images/icons/v2/info-outline-24.svg',
+        $color-gray-15
+      );
+    }
+  }
+
+  &__retry-send::before {
+    @include light-theme {
+      @include color-svg('../images/icons/v2/send-24.svg', $color-black);
+    }
+
+    @include dark-theme {
+      @include color-svg('../images/icons/v2/send-24.svg', $color-gray-15);
+    }
+  }
+
+  &__delete-message::before {
+    @include light-theme {
+      @include color-svg(
+        '../images/icons/v2/trash-outline-24.svg',
+        $color-black
+      );
+    }
+
+    @include dark-theme {
+      @include color-svg(
+        '../images/icons/v2/trash-solid-24.svg',
+        $color-gray-15
+      );
+    }
+  }
+
+  &__delete-message-for-everyone::before {
+    @include light-theme {
+      @include color-svg(
+        '../images/icons/v2/trash-outline-24.svg',
+        $color-black
+      );
+    }
+
+    @include dark-theme {
+      @include color-svg(
+        '../images/icons/v2/trash-solid-24.svg',
+        $color-gray-15
+      );
+    }
+  }
+}
+
+/* Spec: container > 438px and container < 593px */
 @media (min-width: 800px) and (max-width: 925px) {
   .module-message {
-    max-width: 374px;
+    // Add 2px for 1px border
+    max-width: 376px;
   }
   .module-message__container {
     max-width: 100%;
@@ -6624,6 +11761,9 @@ $timer-icons: '55', '50', '45', '40', '35', '30', '25', '20', '15', '10', '05',
     display: inline-block;
   }
   .module-message__buttons__reply {
+    display: inline-block;
+  }
+  .module-message__buttons__react {
     display: inline-block;
   }
 
@@ -6659,12 +11799,18 @@ $timer-icons: '55', '50', '45', '40', '35', '30', '25', '20', '15', '10', '05',
   .module-message__buttons__reply {
     display: inline-block;
   }
+  .module-message__buttons__react {
+    display: inline-block;
+  }
 
   // To hide in larger breakpoints
   .module-message__context__download {
     display: none;
   }
   .module-message__context__reply {
+    display: none;
+  }
+  .module-message__context__react {
     display: none;
   }
 }

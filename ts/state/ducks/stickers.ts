@@ -1,9 +1,8 @@
+// Copyright 2019-2020 Signal Messenger, LLC
+// SPDX-License-Identifier: AGPL-3.0-only
+
 import { Dictionary, omit, reject } from 'lodash';
-import {
-  getRecentStickers,
-  updateStickerLastUsed,
-  updateStickerPackStatus,
-} from '../../../js/modules/data';
+import dataInterface from '../../sql/Client';
 import {
   downloadStickerPack as externalDownloadStickerPack,
   maybeDeletePack,
@@ -12,6 +11,12 @@ import { sendStickerPackSync } from '../../shims/textsecure';
 import { trigger } from '../../shims/events';
 
 import { NoopActionType } from './noop';
+
+const {
+  getRecentStickers,
+  updateStickerLastUsed,
+  updateStickerPackStatus,
+} = dataInterface;
 
 // State
 
@@ -25,6 +30,17 @@ export type StickerDBType = {
   readonly path: string;
 };
 
+export const StickerPackStatuses = [
+  'known',
+  'ephemeral',
+  'downloaded',
+  'installed',
+  'pending',
+  'error',
+] as const;
+
+export type StickerPackStatus = typeof StickerPackStatuses[number];
+
 export type StickerPackDBType = {
   readonly id: string;
   readonly key: string;
@@ -36,13 +52,7 @@ export type StickerPackDBType = {
   readonly downloadAttempts: number;
   readonly installedAt: number | null;
   readonly lastUsed: number;
-  readonly status:
-    | 'known'
-    | 'ephemeral'
-    | 'downloaded'
-    | 'installed'
-    | 'pending'
-    | 'error';
+  readonly status: StickerPackStatus;
   readonly stickerCount: number;
   readonly stickers: Dictionary<StickerDBType>;
   readonly title: string;
@@ -78,13 +88,7 @@ export type StickerPackType = {
   readonly cover?: StickerType;
   readonly lastUsed: number;
   readonly attemptedStatus?: 'downloaded' | 'installed' | 'ephemeral';
-  readonly status:
-    | 'known'
-    | 'ephemeral'
-    | 'downloaded'
-    | 'installed'
-    | 'pending'
-    | 'error';
+  readonly status: StickerPackStatus;
   readonly stickers: Array<StickerType>;
   readonly stickerCount: number;
 };
@@ -103,6 +107,7 @@ type StickerAddedAction = {
 
 type InstallStickerPackPayloadType = {
   packId: string;
+  fromSync: boolean;
   status: 'installed';
   installedAt: number;
   recentStickers: Array<RecentStickerType>;
@@ -121,6 +126,7 @@ type ClearInstalledStickerPackAction = {
 
 type UninstallStickerPackPayloadType = {
   packId: string;
+  fromSync: boolean;
   status: 'downloaded';
   installedAt: null;
   recentStickers: Array<RecentStickerType>;
@@ -219,7 +225,6 @@ function downloadStickerPack(
   const { finalStatus } = options || { finalStatus: undefined };
 
   // We're just kicking this off, since it will generate more redux events
-  // tslint:disable-next-line:no-floating-promises
   externalDownloadStickerPack(packId, packKey, { finalStatus });
 
   return {
@@ -258,8 +263,9 @@ async function doInstallStickerPack(
 
   return {
     packId,
-    installedAt: timestamp,
+    fromSync,
     status,
+    installedAt: timestamp,
     recentStickers: recentStickers.map(item => ({
       packId: item.packId,
       stickerId: item.id,
@@ -298,6 +304,7 @@ async function doUninstallStickerPack(
 
   return {
     packId,
+    fromSync,
     status,
     installedAt: null,
     recentStickers: recentStickers.map(item => ({
@@ -365,13 +372,15 @@ function getEmptyState(): StickersStateType {
   };
 }
 
-// tslint:disable-next-line max-func-body-length
 export function reducer(
-  state: StickersStateType = getEmptyState(),
-  action: StickersActionType
+  state: Readonly<StickersStateType> = getEmptyState(),
+  action: Readonly<StickersActionType>
 ): StickersStateType {
   if (action.type === 'stickers/STICKER_PACK_ADDED') {
-    const { payload } = action;
+    // ts complains due to `stickers: {}` being overridden by the payload
+    // but without full confidence that that's the case, `any` and ignore
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { payload } = action as any;
     const newPack = {
       stickers: {},
       ...payload,
@@ -426,7 +435,7 @@ export function reducer(
     action.type === 'stickers/UNINSTALL_STICKER_PACK_FULFILLED'
   ) {
     const { payload } = action;
-    const { installedAt, packId, status, recentStickers } = payload;
+    const { fromSync, installedAt, packId, status, recentStickers } = payload;
     const { packs } = state;
     const existingPack = packs[packId];
 
@@ -440,9 +449,12 @@ export function reducer(
       };
     }
 
+    const isBlessed = state.blessedPacks[packId];
+    const installedPack = !fromSync && !isBlessed ? packId : null;
+
     return {
       ...state,
-      installedPack: packId,
+      installedPack,
       packs: {
         ...packs,
         [packId]: {

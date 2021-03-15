@@ -1,30 +1,38 @@
+// Copyright 2019-2020 Signal Messenger, LLC
+// SPDX-License-Identifier: AGPL-3.0-only
+
 import { omit } from 'lodash';
+import { createSelector } from 'reselect';
+import { useSelector } from 'react-redux';
+import { StateType } from '../reducer';
 import * as storageShim from '../../shims/storage';
+import { isShortName } from '../../components/emoji/lib';
+import { useBoundActions } from '../../util/hooks';
 
 // State
 
 export type ItemsStateType = {
-  readonly [key: string]: any;
+  readonly [key: string]: unknown;
 };
 
 // Actions
 
 type ItemPutAction = {
   type: 'items/PUT';
-  payload: Promise<void>;
+  payload: null;
 };
 
 type ItemPutExternalAction = {
   type: 'items/PUT_EXTERNAL';
   payload: {
     key: string;
-    value: any;
+    value: unknown;
   };
 };
 
 type ItemRemoveAction = {
   type: 'items/REMOVE';
-  payload: Promise<void>;
+  payload: null;
 };
 
 type ItemRemoveExternalAction = {
@@ -53,14 +61,18 @@ export const actions = {
   resetItems,
 };
 
-function putItem(key: string, value: any): ItemPutAction {
+export const useActions = (): typeof actions => useBoundActions(actions);
+
+function putItem(key: string, value: unknown): ItemPutAction {
+  storageShim.put(key, value);
+
   return {
     type: 'items/PUT',
-    payload: storageShim.put(key, value),
+    payload: null,
   };
 }
 
-function putItemExternal(key: string, value: any): ItemPutExternalAction {
+function putItemExternal(key: string, value: unknown): ItemPutExternalAction {
   return {
     type: 'items/PUT_EXTERNAL',
     payload: {
@@ -71,9 +83,11 @@ function putItemExternal(key: string, value: any): ItemPutExternalAction {
 }
 
 function removeItem(key: string): ItemRemoveAction {
+  storageShim.remove(key);
+
   return {
     type: 'items/REMOVE',
-    payload: storageShim.remove(key),
+    payload: null,
   };
 }
 
@@ -95,8 +109,8 @@ function getEmptyState(): ItemsStateType {
 }
 
 export function reducer(
-  state: ItemsStateType = getEmptyState(),
-  action: ItemsActionType
+  state: Readonly<ItemsStateType> = getEmptyState(),
+  action: Readonly<ItemsActionType>
 ): ItemsStateType {
   if (action.type === 'items/PUT_EXTERNAL') {
     const { payload } = action;
@@ -119,3 +133,13 @@ export function reducer(
 
   return state;
 }
+
+// Selectors
+
+const selectRecentEmojis = createSelector(
+  ({ emojis }: StateType) => emojis.recents,
+  recents => recents.filter(isShortName)
+);
+
+export const useRecentEmojis = (): Array<string> =>
+  useSelector(selectRecentEmojis);

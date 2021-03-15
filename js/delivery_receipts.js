@@ -1,3 +1,6 @@
+// Copyright 2016-2020 Signal Messenger, LLC
+// SPDX-License-Identifier: AGPL-3.0-only
+
 /* global
   Backbone,
   Whisper,
@@ -9,9 +12,7 @@
 /* eslint-disable more/no-then */
 
 // eslint-disable-next-line func-names
-(function() {
-  'use strict';
-
+(function () {
   window.Whisper = window.Whisper || {};
 
   Whisper.DeliveryReceipts = new (Backbone.Collection.extend({
@@ -20,33 +21,36 @@
       if (conversation.isPrivate()) {
         recipients = [conversation.id];
       } else {
-        recipients = conversation.get('members') || [];
+        recipients = conversation.getMemberIds();
       }
       const receipts = this.filter(
         receipt =>
           receipt.get('timestamp') === message.get('sent_at') &&
-          recipients.indexOf(receipt.get('source')) > -1
+          recipients.indexOf(receipt.get('deliveredTo')) > -1
       );
       this.remove(receipts);
       return receipts;
     },
-    async getTargetMessage(source, messages) {
+    async getTargetMessage(sourceId, messages) {
       if (messages.length === 0) {
         return null;
       }
       const message = messages.find(
-        item => !item.isIncoming() && source === item.get('conversationId')
+        item => !item.isIncoming() && sourceId === item.get('conversationId')
       );
       if (message) {
         return MessageController.register(message.id, message);
       }
 
-      const groups = await window.Signal.Data.getAllGroupsInvolvingId(source, {
-        ConversationCollection: Whisper.ConversationCollection,
-      });
+      const groups = await window.Signal.Data.getAllGroupsInvolvingId(
+        sourceId,
+        {
+          ConversationCollection: Whisper.ConversationCollection,
+        }
+      );
 
       const ids = groups.pluck('id');
-      ids.push(source);
+      ids.push(sourceId);
 
       const target = messages.find(
         item =>
@@ -68,13 +72,13 @@
         );
 
         const message = await this.getTargetMessage(
-          receipt.get('source'),
+          receipt.get('deliveredTo'),
           messages
         );
         if (!message) {
           window.log.info(
             'No message for delivery receipt',
-            receipt.get('source'),
+            receipt.get('deliveredTo'),
             receipt.get('timestamp')
           );
           return;
@@ -86,7 +90,7 @@
           'expirationStartTimestamp'
         );
         message.set({
-          delivered_to: _.union(deliveredTo, [receipt.get('source')]),
+          delivered_to: _.union(deliveredTo, [receipt.get('deliveredTo')]),
           delivered: deliveries + 1,
           expirationStartTimestamp: expirationStartTimestamp || Date.now(),
           sent: true,

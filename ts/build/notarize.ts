@@ -1,3 +1,6 @@
+// Copyright 2019-2020 Signal Messenger, LLC
+// SPDX-License-Identifier: AGPL-3.0-only
+
 import { join, resolve } from 'path';
 import { readdir as readdirCallback } from 'fs';
 
@@ -5,15 +8,17 @@ import pify from 'pify';
 
 import { notarize } from 'electron-notarize';
 
-// @ts-ignore
 import * as packageJson from '../../package.json';
 
 const readdir = pify(readdirCallback);
 
-/* tslint:disable:no-console */
+/* eslint-disable no-console */
 
-// tslint:disable-next-line:no-floating-promises
-go();
+go().catch(error => {
+  console.error(error.stack);
+
+  process.exit(1);
+});
 
 async function go() {
   if (process.platform !== 'darwin') {

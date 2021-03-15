@@ -1,11 +1,16 @@
+// Copyright 2017-2021 Signal Messenger, LLC
+// SPDX-License-Identifier: AGPL-3.0-only
+
 /* eslint-disable no-console */
 
 const path = require('path');
 const url = require('url');
 const os = require('os');
-const fs = require('fs');
+const fs = require('fs-extra');
 const crypto = require('crypto');
-const qs = require('qs');
+const normalizePath = require('normalize-path');
+const fg = require('fast-glob');
+const PQueue = require('p-queue').default;
 
 const _ = require('lodash');
 const pify = require('pify');
@@ -13,18 +18,25 @@ const electron = require('electron');
 
 const packageJson = require('./package.json');
 const GlobalErrors = require('./app/global_errors');
+const { setup: setupSpellChecker } = require('./app/spell_check');
 
 GlobalErrors.addHandler();
+
+// Set umask early on in the process lifecycle to ensure file permissions are
+// set such that only we have read access to our files
+process.umask(0o077);
 
 const getRealPath = pify(fs.realpath);
 const {
   app,
   BrowserWindow,
+  dialog,
   ipcMain: ipc,
   Menu,
   protocol: electronProtocol,
   session,
   shell,
+  systemPreferences,
 } = electron;
 
 const appUserModelId = `org.whispersystems.${packageJson.name}`;
@@ -33,9 +45,16 @@ console.log('Set Windows Application User Model ID (AUMID)', {
 });
 app.setAppUserModelId(appUserModelId);
 
+// We don't navigate, but this is the way of the future
+//   https://github.com/electron/electron/issues/18397
+// TODO: Make ringrtc-node context-aware and change this to true.
+app.allowRendererProcessReuse = false;
+
 // Keep a global reference of the window object, if you don't, the window will
 //   be closed automatically when the JavaScript object is garbage collected.
 let mainWindow;
+let mainWindowCreated = false;
+let loadingWindow;
 
 function getMainWindow() {
   return mainWindow;
@@ -47,10 +66,6 @@ const startInTray = process.argv.some(arg => arg === '--start-in-tray');
 const usingTrayIcon =
   startInTray || process.argv.some(arg => arg === '--use-tray-icon');
 
-const disableFlashFrame = process.argv.some(
-  arg => arg === '--disable-flash-frame'
-);
-
 const config = require('./app/config');
 
 // Very important to put before the single instance check, since it is based on the
@@ -60,18 +75,20 @@ const userConfig = require('./app/user_config');
 const importMode =
   process.argv.some(arg => arg === '--import') || config.get('import');
 
-const development = config.environment === 'development';
+const development =
+  config.environment === 'development' || config.environment === 'staging';
 
 // We generally want to pull in our own modules after this point, after the user
 //   data directory has been set.
 const attachments = require('./app/attachments');
 const attachmentChannel = require('./app/attachment_channel');
+const bounce = require('./ts/services/bounce');
 const updater = require('./ts/updater/index');
 const createTrayIcon = require('./app/tray_icon');
-const dockIcon = require('./app/dock_icon');
+const dockIcon = require('./ts/dock_icon');
 const ephemeralConfig = require('./app/ephemeral_config');
-const logging = require('./app/logging');
-const sql = require('./app/sql');
+const logging = require('./ts/logging/main_process_logging');
+const sql = require('./ts/sql/Server').default;
 const sqlChannels = require('./app/sql_channel');
 const windowState = require('./app/window_state');
 const { createTemplate } = require('./app/menu');
@@ -80,6 +97,34 @@ const {
   installWebHandler,
 } = require('./app/protocol_filter');
 const { installPermissionsHandler } = require('./app/permissions');
+const OS = require('./ts/OS');
+const { isBeta } = require('./ts/util/version');
+const {
+  isSgnlHref,
+  isSignalHttpsLink,
+  parseSgnlHref,
+  parseSignalHttpsLink,
+} = require('./ts/util/sgnlHref');
+const {
+  toggleMaximizedBrowserWindow,
+} = require('./ts/util/toggleMaximizedBrowserWindow');
+const {
+  getTitleBarVisibility,
+  TitleBarVisibility,
+} = require('./ts/types/Settings');
+
+let appStartInitialSpellcheckSetting = true;
+
+async function getSpellCheckSetting() {
+  const json = await sql.getItemById('spell-check');
+
+  // Default to `true` if setting doesn't exist yet
+  if (!json) {
+    return true;
+  }
+
+  return json.value;
+}
 
 function showWindow() {
   if (!mainWindow) {
@@ -112,7 +157,7 @@ if (!process.mas) {
     console.log('quitting; we are the second instance');
     app.exit();
   } else {
-    app.on('second-instance', () => {
+    app.on('second-instance', (e, argv) => {
       // Someone tried to run a second instance, we should focus our window
       if (mainWindow) {
         if (mainWindow.isMinimized()) {
@@ -121,6 +166,12 @@ if (!process.mas) {
 
         showWindow();
       }
+      // Are they trying to open a sgnl:// href?
+      const incomingHref = getIncomingHref(argv);
+      if (incomingHref) {
+        handleSgnlHref(incomingHref);
+      }
+      // Handled
       return true;
     });
   }
@@ -141,9 +192,11 @@ let logger;
 let locale;
 
 function prepareURL(pathSegments, moreKeys) {
+  const parsed = url.parse(path.join(...pathSegments));
+
   return url.format({
-    pathname: path.join.apply(null, pathSegments),
-    protocol: 'file:',
+    ...parsed,
+    protocol: parsed.protocol || 'file:',
     slashes: true,
     query: {
       name: packageJson.productName,
@@ -151,7 +204,12 @@ function prepareURL(pathSegments, moreKeys) {
       version: app.getVersion(),
       buildExpiration: config.get('buildExpiration'),
       serverUrl: config.get('serverUrl'),
-      cdnUrl: config.get('cdnUrl'),
+      storageUrl: config.get('storageUrl'),
+      directoryUrl: config.get('directoryUrl'),
+      directoryEnclaveId: config.get('directoryEnclaveId'),
+      directoryTrustAnchor: config.get('directoryTrustAnchor'),
+      cdnUrl0: config.get('cdn').get('0'),
+      cdnUrl2: config.get('cdn').get('2'),
       certificateAuthority: config.get('certificateAuthority'),
       environment: config.environment,
       node_version: process.versions.node,
@@ -159,29 +217,46 @@ function prepareURL(pathSegments, moreKeys) {
       appInstance: process.env.NODE_APP_INSTANCE,
       proxyUrl: process.env.HTTPS_PROXY || process.env.https_proxy,
       contentProxyUrl: config.contentProxyUrl,
+      sfuUrl: config.get('sfuUrl'),
       importMode: importMode ? true : undefined, // for stringify()
+      serverPublicParams: config.get('serverPublicParams'),
       serverTrustRoot: config.get('serverTrustRoot'),
+      appStartInitialSpellcheckSetting,
       ...moreKeys,
     },
   });
 }
 
-function handleUrl(event, target) {
+async function handleUrl(event, target) {
   event.preventDefault();
-  const { protocol } = url.parse(target);
-  if (protocol === 'http:' || protocol === 'https:') {
-    shell.openExternal(target);
+  const { protocol, hostname } = url.parse(target);
+  const isDevServer = config.enableHttp && hostname === 'localhost';
+  // We only want to specially handle urls that aren't requesting the dev server
+  if (isSgnlHref(target) || isSignalHttpsLink(target)) {
+    handleSgnlHref(target);
+    return;
+  }
+
+  if ((protocol === 'http:' || protocol === 'https:') && !isDevServer) {
+    try {
+      await shell.openExternal(target);
+    } catch (error) {
+      console.log(`Failed to open url: ${error.stack}`);
+    }
   }
 }
 
-function captureClicks(window) {
+function handleCommonWindowEvents(window) {
   window.webContents.on('will-navigate', handleUrl);
   window.webContents.on('new-window', handleUrl);
+  window.webContents.on('preload-error', (event, preloadPath, error) => {
+    console.error(`Preload error in ${preloadPath}: `, error.message);
+  });
 }
 
 const DEFAULT_WIDTH = 800;
 const DEFAULT_HEIGHT = 610;
-const MIN_WIDTH = 640;
+const MIN_WIDTH = 680;
 const MIN_HEIGHT = 550;
 const BOUNDS_BUFFER = 100;
 
@@ -210,48 +285,52 @@ function isVisible(window, bounds) {
   );
 }
 
-function createWindow() {
+let windowIcon;
+
+if (OS.isWindows()) {
+  windowIcon = path.join(__dirname, 'build', 'icons', 'win', 'icon.ico');
+} else if (OS.isLinux()) {
+  windowIcon = path.join(__dirname, 'images', 'signal-logo-desktop-linux.png');
+} else {
+  windowIcon = path.join(__dirname, 'build', 'icons', 'png', '512x512.png');
+}
+
+async function createWindow() {
   const { screen } = electron;
-  const windowOptions = Object.assign(
-    {
-      show: !startInTray, // allow to start minimised in tray
-      width: DEFAULT_WIDTH,
-      height: DEFAULT_HEIGHT,
-      minWidth: MIN_WIDTH,
-      minHeight: MIN_HEIGHT,
-      autoHideMenuBar: false,
-      backgroundColor:
-        config.environment === 'test' || config.environment === 'test-lib'
-          ? '#ffffff' // Tests should always be rendered on a white background
-          : '#2090EA',
-      vibrancy: 'appearance-based',
-      webPreferences: {
-        nodeIntegration: false,
-        nodeIntegrationInWorker: false,
-        contextIsolation: false,
-        preload: path.join(__dirname, 'preload.js'),
-        nativeWindowOpen: true,
-      },
-      icon: path.join(__dirname, 'images', 'icon_256.png'),
+  const windowOptions = {
+    show: !startInTray, // allow to start minimised in tray
+    width: DEFAULT_WIDTH,
+    height: DEFAULT_HEIGHT,
+    minWidth: MIN_WIDTH,
+    minHeight: MIN_HEIGHT,
+    autoHideMenuBar: false,
+    titleBarStyle:
+      getTitleBarVisibility() === TitleBarVisibility.Hidden
+        ? 'hidden'
+        : 'default',
+    backgroundColor:
+      config.environment === 'test' || config.environment === 'test-lib'
+        ? '#ffffff' // Tests should always be rendered on a white background
+        : '#3a76f0',
+    webPreferences: {
+      nodeIntegration: false,
+      nodeIntegrationInWorker: false,
+      contextIsolation: false,
+      enableRemoteModule: true,
+      preload: path.join(__dirname, 'preload.js'),
+      nativeWindowOpen: true,
+      spellcheck: await getSpellCheckSetting(),
+      backgroundThrottling: false,
     },
-    _.pick(windowConfig, [
-      'maximized',
-      'autoHideMenuBar',
-      'width',
-      'height',
-      'x',
-      'y',
-    ])
-  );
+    icon: windowIcon,
+    ..._.pick(windowConfig, ['autoHideMenuBar', 'width', 'height', 'x', 'y']),
+  };
 
   if (!_.isNumber(windowOptions.width) || windowOptions.width < MIN_WIDTH) {
     windowOptions.width = DEFAULT_WIDTH;
   }
   if (!_.isNumber(windowOptions.height) || windowOptions.height < MIN_HEIGHT) {
     windowOptions.height = DEFAULT_HEIGHT;
-  }
-  if (!_.isBoolean(windowOptions.maximized)) {
-    delete windowOptions.maximized;
   }
   if (!_.isBoolean(windowOptions.autoHideMenuBar)) {
     delete windowOptions.autoHideMenuBar;
@@ -270,10 +349,6 @@ function createWindow() {
     delete windowOptions.y;
   }
 
-  if (windowOptions.fullscreen === false) {
-    delete windowOptions.fullscreen;
-  }
-
   logger.info(
     'Initializing BrowserWindow config: %s',
     JSON.stringify(windowOptions)
@@ -281,8 +356,13 @@ function createWindow() {
 
   // Create the browser window.
   mainWindow = new BrowserWindow(windowOptions);
-  if (windowOptions.maximized) {
+  mainWindowCreated = true;
+  setupSpellChecker(mainWindow, locale.messages);
+  if (!usingTrayIcon && windowConfig && windowConfig.maximized) {
     mainWindow.maximize();
+  }
+  if (!usingTrayIcon && windowConfig && windowConfig.fullscreen) {
+    mainWindow.setFullScreen(true);
   }
 
   function captureAndSaveWindowStats() {
@@ -296,18 +376,13 @@ function createWindow() {
     // so if we need to recreate the window, we have the most recent settings
     windowConfig = {
       maximized: mainWindow.isMaximized(),
-      autoHideMenuBar: mainWindow.isMenuBarAutoHide(),
+      autoHideMenuBar: mainWindow.autoHideMenuBar,
+      fullscreen: mainWindow.isFullScreen(),
       width: size[0],
       height: size[1],
       x: position[0],
       y: position[1],
     };
-
-    if (mainWindow.isFullScreen()) {
-      // Only include this property if true, because when explicitly set to
-      // false the fullscreen button will be disabled on osx
-      windowConfig.fullscreen = true;
-    }
 
     logger.info(
       'Updating BrowserWindow config: %s',
@@ -320,20 +395,30 @@ function createWindow() {
   mainWindow.on('resize', debouncedCaptureStats);
   mainWindow.on('move', debouncedCaptureStats);
 
-  // Ingested in preload.js via a sendSync call
-  ipc.on('locale-data', event => {
-    // eslint-disable-next-line no-param-reassign
-    event.returnValue = locale.messages;
-  });
+  const setWindowFocus = () => {
+    if (!mainWindow) {
+      return;
+    }
+    mainWindow.webContents.send('set-window-focus', mainWindow.isFocused());
+  };
+  mainWindow.on('focus', setWindowFocus);
+  mainWindow.on('blur', setWindowFocus);
+  mainWindow.once('ready-to-show', setWindowFocus);
+  // This is a fallback in case we drop an event for some reason.
+  setInterval(setWindowFocus, 10000);
+
+  const moreKeys = {
+    isFullScreen: String(Boolean(mainWindow.isFullScreen())),
+  };
 
   if (config.environment === 'test') {
-    mainWindow.loadURL(prepareURL([__dirname, 'test', 'index.html']));
+    mainWindow.loadURL(prepareURL([__dirname, 'test', 'index.html'], moreKeys));
   } else if (config.environment === 'test-lib') {
     mainWindow.loadURL(
-      prepareURL([__dirname, 'libtextsecure', 'test', 'index.html'])
+      prepareURL([__dirname, 'libtextsecure', 'test', 'index.html'], moreKeys)
     );
   } else {
-    mainWindow.loadURL(prepareURL([__dirname, 'background.html']));
+    mainWindow.loadURL(prepareURL([__dirname, 'background.html'], moreKeys));
   }
 
   if (config.get('openDevTools')) {
@@ -341,7 +426,10 @@ function createWindow() {
     mainWindow.webContents.openDevTools();
   }
 
-  captureClicks(mainWindow);
+  handleCommonWindowEvents(mainWindow);
+
+  // App dock icon bounce
+  bounce.init(mainWindow);
 
   // Emitted when the window is about to be closed.
   // Note: We do most of our shutdown logic here because all windows are closed by
@@ -362,14 +450,25 @@ function createWindow() {
 
     // Prevent the shutdown
     e.preventDefault();
-    mainWindow.hide();
+
+    /**
+     * if the user is in fullscreen mode and closes the window, not the
+     * application, we need them leave fullscreen first before closing it to
+     * prevent a black screen.
+     *
+     * issue: https://github.com/signalapp/Signal-Desktop/issues/4348
+     */
+
+    if (mainWindow.isFullScreen()) {
+      mainWindow.once('leave-full-screen', () => mainWindow.hide());
+      mainWindow.setFullScreen(false);
+    } else {
+      mainWindow.hide();
+    }
 
     // On Mac, or on other platforms when the tray icon is in use, the window
     // should be only hidden, not closed, when the user clicks the close button
-    if (
-      !windowState.shouldQuit() &&
-      (usingTrayIcon || process.platform === 'darwin')
-    ) {
+    if (!windowState.shouldQuit() && (usingTrayIcon || OS.isMacOS())) {
       // toggle the visibility of the show/hide tray icon menu entries
       if (tray) {
         tray.updateContextMenu();
@@ -397,10 +496,44 @@ function createWindow() {
     // when you should delete the corresponding element.
     mainWindow = null;
   });
+
+  mainWindow.on('enter-full-screen', () => {
+    mainWindow.webContents.send('full-screen-change', true);
+  });
+  mainWindow.on('leave-full-screen', () => {
+    mainWindow.webContents.send('full-screen-change', false);
+  });
 }
 
 ipc.on('show-window', () => {
   showWindow();
+});
+
+ipc.on('title-bar-double-click', () => {
+  if (!mainWindow) {
+    return;
+  }
+
+  if (OS.isMacOS()) {
+    switch (
+      systemPreferences.getUserDefault('AppleActionOnDoubleClick', 'string')
+    ) {
+      case 'Minimize':
+        mainWindow.minimize();
+        break;
+      case 'Maximize':
+        toggleMaximizedBrowserWindow(mainWindow);
+        break;
+      default:
+        // If this is disabled, it'll be 'None'. If it's anything else, that's unexpected,
+        //   but we'll just no-op.
+        break;
+    }
+  } else {
+    // This is currently only supported on macOS. This `else` branch is just here when/if
+    //   we add support for other operating systems.
+    toggleMaximizedBrowserWindow(mainWindow);
+  }
 });
 
 let isReadyForUpdates = false;
@@ -412,16 +545,14 @@ async function readyForUpdates() {
   isReadyForUpdates = true;
 
   // First, install requested sticker pack
-  if (process.argv.length > 1) {
-    const [incomingUrl] = process.argv;
-    if (incomingUrl.startsWith('sgnl://')) {
-      handleSgnlLink(incomingUrl);
-    }
+  const incomingHref = getIncomingHref(process.argv);
+  if (incomingHref) {
+    handleSgnlHref(incomingHref);
   }
 
   // Second, start checking for app updates
   try {
-    await updater.start(getMainWindow, locale.messages, logger);
+    await updater.start(getMainWindow, locale, logger);
   } catch (error) {
     logger.error(
       'Error starting update checks:',
@@ -435,29 +566,76 @@ ipc.once('ready-for-updates', readyForUpdates);
 const TEN_MINUTES = 10 * 60 * 1000;
 setTimeout(readyForUpdates, TEN_MINUTES);
 
+// the support only provides a subset of languages available within the app
+// so we have to list them out here and fallback to english if not included
+
+const SUPPORT_LANGUAGES = [
+  'ar',
+  'bn',
+  'de',
+  'en-us',
+  'es',
+  'fr',
+  'hi',
+  'hi-in',
+  'hc',
+  'id',
+  'it',
+  'ja',
+  'ko',
+  'mr',
+  'ms',
+  'nl',
+  'pl',
+  'pt',
+  'ru',
+  'sv',
+  'ta',
+  'te',
+  'tr',
+  'uk',
+  'ur',
+  'vi',
+  'zh-cn',
+  'zh-tw',
+];
+
+function openContactUs() {
+  const userLanguage = app.getLocale();
+  const language = SUPPORT_LANGUAGES.includes(userLanguage)
+    ? userLanguage
+    : 'en-us';
+
+  // This URL needs a hardcoded language because the '?desktop' is dropped if the page
+  //   auto-redirects to the proper URL
+  shell.openExternal(
+    `https://support.signal.org/hc/${language}/requests/new?desktop`
+  );
+}
+
+function openJoinTheBeta() {
+  // If we omit the language, the site will detect the language and redirect
+  shell.openExternal('https://support.signal.org/hc/articles/360007318471');
+}
+
 function openReleaseNotes() {
   shell.openExternal(
     `https://github.com/signalapp/Signal-Desktop/releases/tag/v${app.getVersion()}`
   );
 }
 
-function openNewBugForm() {
-  shell.openExternal('https://github.com/signalapp/Signal-Desktop/issues/new');
-}
-
 function openSupportPage() {
-  shell.openExternal(
-    'https://support.signal.org/hc/en-us/categories/202319038-Desktop'
-  );
+  // If we omit the language, the site will detect the language and redirect
+  shell.openExternal('https://support.signal.org/hc/sections/360001602812');
 }
 
 function openForums() {
   shell.openExternal('https://community.signalusers.org/');
 }
 
-function setupWithImport() {
+function showKeyboardShortcuts() {
   if (mainWindow) {
-    mainWindow.webContents.send('set-up-with-import');
+    mainWindow.webContents.send('show-keyboard-shortcuts');
   }
 }
 
@@ -482,13 +660,12 @@ function showAbout() {
 
   const options = {
     width: 500,
-    height: 400,
+    height: 500,
     resizable: false,
     title: locale.messages.aboutSignalDesktop.message,
     autoHideMenuBar: true,
-    backgroundColor: '#2090EA',
+    backgroundColor: '#3a76f0',
     show: false,
-    vibrancy: 'appearance-based',
     webPreferences: {
       nodeIntegration: false,
       nodeIntegrationInWorker: false,
@@ -496,12 +673,11 @@ function showAbout() {
       preload: path.join(__dirname, 'about_preload.js'),
       nativeWindowOpen: true,
     },
-    parent: mainWindow,
   };
 
   aboutWindow = new BrowserWindow(options);
 
-  captureClicks(aboutWindow);
+  handleCommonWindowEvents(aboutWindow);
 
   aboutWindow.loadURL(prepareURL([__dirname, 'about.html']));
 
@@ -515,7 +691,7 @@ function showAbout() {
 }
 
 let settingsWindow;
-async function showSettingsWindow() {
+function showSettingsWindow() {
   if (settingsWindow) {
     settingsWindow.show();
     return;
@@ -527,20 +703,28 @@ async function showSettingsWindow() {
   addDarkOverlay();
 
   const size = mainWindow.getSize();
+  // center settings window over main window
+  const settingwidth = Math.min(500, size[0]);
+  const settingheight = Math.max(size[1] - 100, MIN_HEIGHT);
+  const mainPos = mainWindow.getPosition();
+  const mainSize = mainWindow.getSize();
   const options = {
-    width: Math.min(500, size[0]),
-    height: Math.max(size[1] - 100, MIN_HEIGHT),
+    x: Math.round(mainPos[0] + mainSize[0] / 2 - settingwidth / 2),
+    y: Math.round(mainPos[1] + mainSize[1] / 2 - settingheight / 2),
+    width: settingwidth,
+    height: settingheight,
+    frame: false,
     resizable: false,
     title: locale.messages.signalDesktopPreferences.message,
     autoHideMenuBar: true,
-    backgroundColor: '#2090EA',
+    backgroundColor: '#3a76f0',
     show: false,
     modal: true,
-    vibrancy: 'appearance-based',
     webPreferences: {
       nodeIntegration: false,
       nodeIntegrationInWorker: false,
       contextIsolation: false,
+      enableRemoteModule: true,
       preload: path.join(__dirname, 'settings_preload.js'),
       nativeWindowOpen: true,
     },
@@ -549,7 +733,7 @@ async function showSettingsWindow() {
 
   settingsWindow = new BrowserWindow(options);
 
-  captureClicks(settingsWindow);
+  handleCommonWindowEvents(settingsWindow);
 
   settingsWindow.loadURL(prepareURL([__dirname, 'settings.html']));
 
@@ -560,6 +744,84 @@ async function showSettingsWindow() {
 
   settingsWindow.once('ready-to-show', () => {
     settingsWindow.show();
+  });
+}
+
+async function getIsLinked() {
+  try {
+    const number = await sql.getItemById('number_id');
+    const password = await sql.getItemById('password');
+    return Boolean(number && password);
+  } catch (e) {
+    return false;
+  }
+}
+
+let stickerCreatorWindow;
+async function showStickerCreator() {
+  if (!(await getIsLinked())) {
+    const { message } = locale.messages[
+      'StickerCreator--Authentication--error'
+    ];
+
+    dialog.showMessageBox({
+      type: 'warning',
+      message,
+    });
+
+    return;
+  }
+
+  if (stickerCreatorWindow) {
+    stickerCreatorWindow.show();
+    return;
+  }
+
+  const { x = 0, y = 0 } = windowConfig || {};
+
+  const options = {
+    x: x + 100,
+    y: y + 100,
+    width: 800,
+    minWidth: 800,
+    height: 650,
+    title: locale.messages.signalDesktopStickerCreator.message,
+    autoHideMenuBar: true,
+    backgroundColor: '#3a76f0',
+    show: false,
+    webPreferences: {
+      nodeIntegration: false,
+      nodeIntegrationInWorker: false,
+      contextIsolation: false,
+      enableRemoteModule: true,
+      preload: path.join(__dirname, 'sticker-creator/preload.js'),
+      nativeWindowOpen: true,
+      spellcheck: await getSpellCheckSetting(),
+    },
+  };
+
+  stickerCreatorWindow = new BrowserWindow(options);
+  setupSpellChecker(stickerCreatorWindow, locale.messages);
+
+  handleCommonWindowEvents(stickerCreatorWindow);
+
+  const appUrl = config.enableHttp
+    ? prepareURL(['http://localhost:6380/sticker-creator/dist/index.html'])
+    : prepareURL([__dirname, 'sticker-creator/dist/index.html']);
+
+  stickerCreatorWindow.loadURL(appUrl);
+
+  stickerCreatorWindow.on('closed', () => {
+    stickerCreatorWindow = null;
+  });
+
+  stickerCreatorWindow.once('ready-to-show', () => {
+    stickerCreatorWindow.show();
+
+    if (config.get('openDevTools')) {
+      // Open the DevTools.
+      stickerCreatorWindow.webContents.openDevTools();
+    }
   });
 }
 
@@ -578,10 +840,9 @@ async function showDebugLogWindow() {
     resizable: false,
     title: locale.messages.debugLog.message,
     autoHideMenuBar: true,
-    backgroundColor: '#2090EA',
+    backgroundColor: '#3a76f0',
     show: false,
     modal: true,
-    vibrancy: 'appearance-based',
     webPreferences: {
       nodeIntegration: false,
       nodeIntegrationInWorker: false,
@@ -594,7 +855,7 @@ async function showDebugLogWindow() {
 
   debugLogWindow = new BrowserWindow(options);
 
-  captureClicks(debugLogWindow);
+  handleCommonWindowEvents(debugLogWindow);
 
   debugLogWindow.loadURL(prepareURL([__dirname, 'debug_log.html'], { theme }));
 
@@ -610,53 +871,62 @@ async function showDebugLogWindow() {
 }
 
 let permissionsPopupWindow;
-async function showPermissionsPopupWindow() {
-  if (permissionsPopupWindow) {
-    permissionsPopupWindow.show();
-    return;
-  }
-  if (!mainWindow) {
-    return;
-  }
+function showPermissionsPopupWindow(forCalling, forCamera) {
+  // eslint-disable-next-line no-async-promise-executor
+  return new Promise(async (resolve, reject) => {
+    if (permissionsPopupWindow) {
+      permissionsPopupWindow.show();
+      reject(new Error('Permission window already showing'));
+    }
+    if (!mainWindow) {
+      reject(new Error('No main window'));
+    }
 
-  const theme = await pify(getDataFromMainWindow)('theme-setting');
-  const size = mainWindow.getSize();
-  const options = {
-    width: Math.min(400, size[0]),
-    height: Math.min(150, size[1]),
-    resizable: false,
-    title: locale.messages.allowAccess.message,
-    autoHideMenuBar: true,
-    backgroundColor: '#2090EA',
-    show: false,
-    modal: true,
-    vibrancy: 'appearance-based',
-    webPreferences: {
-      nodeIntegration: false,
-      nodeIntegrationInWorker: false,
-      contextIsolation: false,
-      preload: path.join(__dirname, 'permissions_popup_preload.js'),
-      nativeWindowOpen: true,
-    },
-    parent: mainWindow,
-  };
+    const theme = await pify(getDataFromMainWindow)('theme-setting');
+    const size = mainWindow.getSize();
+    const options = {
+      width: Math.min(400, size[0]),
+      height: Math.min(150, size[1]),
+      resizable: false,
+      title: locale.messages.allowAccess.message,
+      autoHideMenuBar: true,
+      backgroundColor: '#3a76f0',
+      show: false,
+      modal: true,
+      webPreferences: {
+        nodeIntegration: false,
+        nodeIntegrationInWorker: false,
+        contextIsolation: false,
+        enableRemoteModule: true,
+        preload: path.join(__dirname, 'permissions_popup_preload.js'),
+        nativeWindowOpen: true,
+      },
+      parent: mainWindow,
+    };
 
-  permissionsPopupWindow = new BrowserWindow(options);
+    permissionsPopupWindow = new BrowserWindow(options);
 
-  captureClicks(permissionsPopupWindow);
+    handleCommonWindowEvents(permissionsPopupWindow);
 
-  permissionsPopupWindow.loadURL(
-    prepareURL([__dirname, 'permissions_popup.html'], { theme })
-  );
+    permissionsPopupWindow.loadURL(
+      prepareURL([__dirname, 'permissions_popup.html'], {
+        theme,
+        forCalling,
+        forCamera,
+      })
+    );
 
-  permissionsPopupWindow.on('closed', () => {
-    removeDarkOverlay();
-    permissionsPopupWindow = null;
-  });
+    permissionsPopupWindow.on('closed', () => {
+      removeDarkOverlay();
+      permissionsPopupWindow = null;
 
-  permissionsPopupWindow.once('ready-to-show', () => {
-    addDarkOverlay();
-    permissionsPopupWindow.show();
+      resolve();
+    });
+
+    permissionsPopupWindow.once('ready-to-show', () => {
+      addDarkOverlay();
+      permissionsPopupWindow.show();
+    });
   });
 }
 
@@ -665,6 +935,14 @@ async function showPermissionsPopupWindow() {
 // Some APIs can only be used after this event occurs.
 let ready = false;
 app.on('ready', async () => {
+  const startTime = Date.now();
+
+  // We use this event only a single time to log the startup time of the app
+  // from when it's first ready until the loading screen disappears.
+  ipc.once('signal-app-loaded', () => {
+    console.log('App has finished loading in:', Date.now() - startTime);
+  });
+
   const userDataPath = await getRealPath(app.getPath('userData'));
   const installPath = await getRealPath(app.getAppPath());
 
@@ -673,20 +951,38 @@ app.on('ready', async () => {
       protocol: electronProtocol,
       userDataPath,
       installPath,
-      isWindows: process.platform === 'win32',
+      isWindows: OS.isWindows(),
     });
   }
 
   installWebHandler({
+    enableHttp: config.enableHttp,
     protocol: electronProtocol,
   });
 
   installPermissionsHandler({ session, userConfig });
 
-  await logging.initialize();
-  logger = logging.getLogger();
+  logger = await logging.initialize();
   logger.info('app ready');
   logger.info(`starting version ${packageJson.version}`);
+
+  // This logging helps us debug user reports about broken devices.
+  {
+    let getMediaAccessStatus;
+    // This function is not supported on Linux, so we have a fallback.
+    if (systemPreferences.getMediaAccessStatus) {
+      getMediaAccessStatus = systemPreferences.getMediaAccessStatus.bind(
+        systemPreferences
+      );
+    } else {
+      getMediaAccessStatus = _.noop;
+    }
+    logger.info(
+      'media access status',
+      getMediaAccessStatus('microphone'),
+      getMediaAccessStatus('camera')
+    );
+  }
 
   if (!locale) {
     const appLocale = process.env.NODE_ENV === 'test' ? 'en' : app.getLocale();
@@ -704,15 +1000,58 @@ app.on('ready', async () => {
     key = crypto.randomBytes(32).toString('hex');
     userConfig.set('key', key);
   }
-  const success = await sql.initialize({
+  const sqlInitPromise = sql.initialize({
     configDir: userDataPath,
     key,
     messages: locale.messages,
   });
+
+  // If the sql initialization takes more than three seconds to complete, we
+  // want to notify the user that things are happening
+  const timeout = new Promise(resolve => setTimeout(resolve, 3000, 'timeout'));
+  // eslint-disable-next-line more/no-then
+  Promise.race([sqlInitPromise, timeout]).then(maybeTimeout => {
+    if (maybeTimeout !== 'timeout') {
+      return;
+    }
+
+    console.log(
+      'sql.initialize is taking more than three seconds; showing loading dialog'
+    );
+
+    loadingWindow = new BrowserWindow({
+      show: false,
+      width: 300,
+      height: 265,
+      resizable: false,
+      frame: false,
+      backgroundColor: '#3a76f0',
+      webPreferences: {
+        nodeIntegration: false,
+        preload: path.join(__dirname, 'loading_preload.js'),
+      },
+      icon: windowIcon,
+    });
+
+    loadingWindow.once('ready-to-show', async () => {
+      loadingWindow.show();
+      // Wait for sql initialization to complete
+      await sqlInitPromise;
+      loadingWindow.destroy();
+      loadingWindow = null;
+    });
+
+    loadingWindow.loadURL(prepareURL([__dirname, 'loading.html']));
+  });
+
+  const success = await sqlInitPromise;
+
   if (!success) {
     console.log('sql.initialize was unsuccessful; returning early');
     return;
   }
+  // eslint-disable-next-line more/no-then
+  appStartInitialSpellcheckSetting = await getSpellCheckSetting();
   await sqlChannels.initialize();
 
   try {
@@ -773,32 +1112,37 @@ app.on('ready', async () => {
 
   ready = true;
 
-  createWindow();
-
+  await createWindow();
   if (usingTrayIcon) {
     tray = createTrayIcon(getMainWindow, locale.messages);
   }
 
   setupMenu();
+
+  ensureFilePermissions(['config.json', 'sql/db.sqlite']);
 });
 
 function setupMenu(options) {
   const { platform } = process;
-  const menuOptions = Object.assign({}, options, {
+  const menuOptions = {
+    ...options,
     development,
+    isBeta: isBeta(app.getVersion()),
     showDebugLog: showDebugLogWindow,
+    showKeyboardShortcuts,
     showWindow,
     showAbout,
     showSettings: showSettingsWindow,
+    showStickerCreator,
+    openContactUs,
+    openJoinTheBeta,
     openReleaseNotes,
-    openNewBugForm,
     openSupportPage,
     openForums,
     platform,
-    setupWithImport,
     setupAsNewDevice,
     setupAsStandalone,
-  });
+  };
   const template = createTemplate(menuOptions, locale.messages);
   const menu = Menu.buildFromTemplate(template);
   Menu.setApplicationMenu(menu);
@@ -855,13 +1199,18 @@ app.on('before-quit', () => {
 
 // Quit when all windows are closed.
 app.on('window-all-closed', () => {
+  console.log('main process handling window-all-closed');
   // On OS X it is common for applications and their menu bar
   // to stay active until the user quits explicitly with Cmd + Q
-  if (
-    process.platform !== 'darwin' ||
+  const shouldAutoClose =
+    !OS.isMacOS() ||
     config.environment === 'test' ||
-    config.environment === 'test-lib'
-  ) {
+    config.environment === 'test-lib';
+
+  // Only automatically quit if the main window has been created
+  // This is necessary because `window-all-closed` can be triggered by the
+  // "optimizing application" window closing
+  if (shouldAutoClose && mainWindowCreated) {
     app.quit();
   }
 });
@@ -891,13 +1240,17 @@ app.on('web-contents-created', (createEvent, contents) => {
 });
 
 app.setAsDefaultProtocolClient('sgnl');
-app.on('open-url', (event, incomingUrl) => {
-  event.preventDefault();
-  handleSgnlLink(incomingUrl);
+app.on('will-finish-launching', () => {
+  // open-url must be set from within will-finish-launching for macOS
+  // https://stackoverflow.com/a/43949291
+  app.on('open-url', (event, incomingHref) => {
+    event.preventDefault();
+    handleSgnlHref(incomingHref);
+  });
 });
 
 ipc.on('set-badge-count', (event, count) => {
-  app.setBadgeCount(count);
+  app.badgeCount = count;
 });
 
 ipc.on('remove-setup-menu-items', () => {
@@ -914,11 +1267,8 @@ ipc.on('draw-attention', () => {
   if (!mainWindow) {
     return;
   }
-  if (disableFlashFrame) {
-    return;
-  }
 
-  if (process.platform === 'win32' || process.platform === 'linux') {
+  if (OS.isWindows() || OS.isLinux()) {
     mainWindow.flashFrame(true);
   }
 });
@@ -927,10 +1277,13 @@ ipc.on('restart', () => {
   app.relaunch();
   app.quit();
 });
+ipc.on('shutdown', () => {
+  app.quit();
+});
 
 ipc.on('set-auto-hide-menu-bar', (event, autoHide) => {
   if (mainWindow) {
-    mainWindow.setAutoHideMenuBar(autoHide);
+    mainWindow.autoHideMenuBar = autoHide;
   }
 });
 
@@ -963,7 +1316,16 @@ ipc.on('close-debug-log', () => {
 
 // Permissions Popup-related IPC calls
 
-ipc.on('show-permissions-popup', showPermissionsPopupWindow);
+ipc.on('show-permissions-popup', () => {
+  showPermissionsPopupWindow(false, false);
+});
+ipc.handle('show-calling-permissions-popup', async (event, forCamera) => {
+  try {
+    await showPermissionsPopupWindow(true, forCamera);
+  } catch (error) {
+    console.error(error);
+  }
+});
 ipc.on('close-permissions-popup', () => {
   if (permissionsPopupWindow) {
     permissionsPopupWindow.close();
@@ -999,18 +1361,39 @@ installSettingsSetter('hide-menu-bar');
 
 installSettingsGetter('notification-setting');
 installSettingsSetter('notification-setting');
+installSettingsGetter('notification-draw-attention');
+installSettingsSetter('notification-draw-attention');
 installSettingsGetter('audio-notification');
 installSettingsSetter('audio-notification');
+installSettingsGetter('badge-count-muted-conversations');
+installSettingsSetter('badge-count-muted-conversations');
 
 installSettingsGetter('spell-check');
 installSettingsSetter('spell-check');
 
-// This one is different because its single source of truth is userConfig, not IndexedDB
+installSettingsGetter('always-relay-calls');
+installSettingsSetter('always-relay-calls');
+installSettingsGetter('call-ringtone-notification');
+installSettingsSetter('call-ringtone-notification');
+installSettingsGetter('call-system-notification');
+installSettingsSetter('call-system-notification');
+installSettingsGetter('incoming-call-notification');
+installSettingsSetter('incoming-call-notification');
+
+// These ones are different because its single source of truth is userConfig,
+// not IndexedDB
 ipc.on('get-media-permissions', event => {
   event.sender.send(
     'get-success-media-permissions',
     null,
     userConfig.get('mediaPermissions') || false
+  );
+});
+ipc.on('get-media-camera-permissions', event => {
+  event.sender.send(
+    'get-success-media-camera-permissions',
+    null,
+    userConfig.get('mediaCameraPermissions') || false
   );
 });
 ipc.on('set-media-permissions', (event, value) => {
@@ -1020,6 +1403,14 @@ ipc.on('set-media-permissions', (event, value) => {
   installPermissionsHandler({ session, userConfig });
 
   event.sender.send('set-success-media-permissions', null);
+});
+ipc.on('set-media-camera-permissions', (event, value) => {
+  userConfig.set('mediaCameraPermissions', value);
+
+  // We reinstall permissions handler to ensure that a revoked permission takes effect
+  installPermissionsHandler({ session, userConfig });
+
+  event.sender.send('set-success-media-camera-permissions', null);
 });
 
 installSettingsGetter('is-primary');
@@ -1044,6 +1435,12 @@ ipc.on('get-built-in-images', async () => {
       console.error('Error handling get-built-in-images:', error.stack);
     }
   }
+});
+
+// Ingested in preload.js via a sendSync call
+ipc.on('locale-data', event => {
+  // eslint-disable-next-line no-param-reassign
+  event.returnValue = locale.messages;
 });
 
 function getDataFromMainWindow(name, callback) {
@@ -1084,14 +1481,94 @@ function installSettingsSetter(name) {
   });
 }
 
-function handleSgnlLink(incomingUrl) {
-  const { host: command, query } = url.parse(incomingUrl);
-  const args = qs.parse(query);
+function getIncomingHref(argv) {
+  return argv.find(arg => isSgnlHref(arg, logger));
+}
+
+function handleSgnlHref(incomingHref) {
+  let command;
+  let args;
+  let hash;
+
+  if (isSgnlHref(incomingHref)) {
+    ({ command, args, hash } = parseSgnlHref(incomingHref, logger));
+  } else if (isSignalHttpsLink(incomingHref)) {
+    ({ command, args, hash } = parseSignalHttpsLink(incomingHref, logger));
+  }
+
   if (command === 'addstickers' && mainWindow && mainWindow.webContents) {
-    const { pack_id: packId, pack_key: packKeyHex } = args;
-    const packKey = Buffer.from(packKeyHex, 'hex').toString('base64');
+    console.log('Opening sticker pack from sgnl protocol link');
+    const packId = args.get('pack_id');
+    const packKeyHex = args.get('pack_key');
+    const packKey = packKeyHex
+      ? Buffer.from(packKeyHex, 'hex').toString('base64')
+      : '';
     mainWindow.webContents.send('show-sticker-pack', { packId, packKey });
+  } else if (
+    command === 'signal.group' &&
+    hash &&
+    mainWindow &&
+    mainWindow.webContents
+  ) {
+    console.log('Showing group from sgnl protocol link');
+    mainWindow.webContents.send('show-group-via-link', { hash });
+  } else if (mainWindow && mainWindow.webContents) {
+    console.log('Showing warning that we cannot process link');
+    mainWindow.webContents.send('unknown-sgnl-link');
   } else {
     console.error('Unhandled sgnl link');
   }
+}
+
+ipc.on('install-sticker-pack', (_event, packId, packKeyHex) => {
+  const packKey = Buffer.from(packKeyHex, 'hex').toString('base64');
+  mainWindow.webContents.send('install-sticker-pack', { packId, packKey });
+});
+
+ipc.on('ensure-file-permissions', async event => {
+  await ensureFilePermissions();
+  event.reply('ensure-file-permissions-done');
+});
+
+/**
+ * Ensure files in the user's data directory have the proper permissions.
+ * Optionally takes an array of file paths to exclusively affect.
+ *
+ * @param {string[]} [onlyFiles] - Only ensure permissions on these given files
+ */
+async function ensureFilePermissions(onlyFiles) {
+  console.log('Begin ensuring permissions');
+
+  const start = Date.now();
+  const userDataPath = await getRealPath(app.getPath('userData'));
+  // fast-glob uses `/` for all platforms
+  const userDataGlob = normalizePath(path.join(userDataPath, '**', '*'));
+
+  // Determine files to touch
+  const files = onlyFiles
+    ? onlyFiles.map(f => path.join(userDataPath, f))
+    : await fg(userDataGlob, {
+        markDirectories: true,
+        onlyFiles: false,
+        ignore: ['**/Singleton*'],
+      });
+
+  console.log(`Ensuring file permissions for ${files.length} files`);
+
+  // Touch each file in a queue
+  const q = new PQueue({ concurrency: 5, timeout: 1000 * 60 * 2 });
+  q.addAll(
+    files.map(f => async () => {
+      const isDir = f.endsWith('/');
+      try {
+        await fs.chmod(path.normalize(f), isDir ? 0o700 : 0o600);
+      } catch (error) {
+        console.error('ensureFilePermissions: Error from chmod', error.message);
+      }
+    })
+  );
+
+  await q.onEmpty();
+
+  console.log(`Finish ensuring permissions in ${Date.now() - start}ms`);
 }

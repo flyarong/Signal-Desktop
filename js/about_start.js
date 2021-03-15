@@ -1,3 +1,6 @@
+// Copyright 2018-2020 Signal Messenger, LLC
+// SPDX-License-Identifier: AGPL-3.0-only
+
 /* global $: false */
 
 // Add version
@@ -16,13 +19,12 @@ if (window.getAppInstance()) {
 $('.environment').text(states.join(' - '));
 
 // Install the 'dismiss with escape key' handler
-$(document).on('keyup', e => {
-  'use strict';
-
+$(document).on('keydown', e => {
   if (e.keyCode === 27) {
     window.closeAbout();
   }
 });
 
-// Localize the privacy string
+// Localize the acknowledgment and privacy strings
+$('.acknowledgments').text(window.i18n('softwareAcknowledgments'));
 $('.privacy').text(window.i18n('privacyPolicy'));

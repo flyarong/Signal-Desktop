@@ -1,3 +1,6 @@
+<!-- Copyright 2018-2020 Signal Messenger, LLC -->
+<!-- SPDX-License-Identifier: AGPL-3.0-only -->
+
 <html>
 <head>
   <meta http-equiv="Content-Security-Policy"
@@ -13,6 +16,7 @@
             script-src 'self';
             style-src 'self' 'unsafe-inline';"
   >
+  <link href="node_modules/sanitize.css/sanitize.css" rel="stylesheet" type="text/css" />
   <link href="stylesheets/manifest.css" rel="stylesheet" type="text/css" />
 <style>
 </style>
@@ -26,7 +30,7 @@
       <h1> {{ title }} </h1>
       <p> {{ debugLogExplanation }}</p>
     </div>
-    <textarea spellcheck='false' rows='5'></textarea>
+    <textarea class='textarea' spellcheck='false' rows='5'></textarea>
     <div class='buttons'>
       <button class='grey submit'>{{ submit }}</button>
     </div>
@@ -37,17 +41,22 @@
 <script type='text/x-tmpl-mustache' id='debug-log-link'>
   <div class='input-group clearfix'>
     <input type='text' class='link' readonly value='{{ url }}' />
-    <a class='open' alt='open in a new browser tab' target='_blank' href='{{ url }}'></a>
+    <a class='copy' alt='{{ debugLogCopyAlt }}' target='_blank' href='{{ url }}'>{{ debugLogCopy }}</a>
   </div>
   <p>
     <a class='report-link' target='_blank'
-        href='https://github.com/signalapp/Signal-Desktop/issues/new/'>
+        href='https://support.signal.org/hc/requests/new'>
         {{ reportIssue }}
     </a>
   </p>
 </script>
+<script type='text/x-tmpl-mustache' id='toast'>
+  {{ toastMessage }}
+</script>
 <script type='text/javascript' src='js/components.js'></script>
+<script type='text/javascript' src='ts/backboneJquery.js'></script>
 <script type='text/javascript' src='js/views/whisper_view.js'></script>
+<script type='text/javascript' src='js/views/toast_view.js'></script>
 <script type='text/javascript' src='js/views/debug_log_view.js'></script>
 <script type='text/javascript' src='js/debug_log_start.js'></script>
 </html>

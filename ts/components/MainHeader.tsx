@@ -1,6 +1,9 @@
+// Copyright 2018-2021 Signal Messenger, LLC
+// SPDX-License-Identifier: AGPL-3.0-only
+
 import React from 'react';
 import classNames from 'classnames';
-import { debounce } from 'lodash';
+import { debounce, get } from 'lodash';
 import { Manager, Popper, Reference } from 'react-popper';
 import { createPortal } from 'react-dom';
 
@@ -8,23 +11,28 @@ import { showSettings } from '../shims/Whisper';
 import { Avatar } from './Avatar';
 import { AvatarPopup } from './AvatarPopup';
 import { LocalizerType } from '../types/Util';
+import { ColorType } from '../types/Colors';
 
-export interface PropsType {
+export type PropsType = {
   searchTerm: string;
   searchConversationName?: string;
   searchConversationId?: string;
+  startSearchCounter: number;
 
   // To be used as an ID
+  ourConversationId: string;
+  ourUuid: string;
   ourNumber: string;
   regionCode: string;
 
   // For display
-  phoneNumber: string;
-  isMe: boolean;
+  phoneNumber?: string;
+  isMe?: boolean;
   name?: string;
-  color: string;
-  verified: boolean;
+  color?: ColorType;
+  isVerified?: boolean;
   profileName?: string;
+  title: string;
   avatarPath?: string;
 
   i18n: LocalizerType;
@@ -39,7 +47,9 @@ export interface PropsType {
   searchDiscussions: (
     query: string,
     options: {
+      ourConversationId: string;
       ourNumber: string;
+      ourUuid: string;
       noteToSelf: string;
     }
   ) => void;
@@ -48,12 +58,12 @@ export interface PropsType {
   clearSearch: () => void;
 
   showArchivedConversations: () => void;
-}
+};
 
-interface StateType {
+type StateType = {
   showingAvatarPopup: boolean;
   popperRoot: HTMLDivElement | null;
-}
+};
 
 export class MainHeader extends React.Component<PropsType, StateType> {
   private readonly inputRef: React.RefObject<HTMLInputElement>;
@@ -69,17 +79,8 @@ export class MainHeader extends React.Component<PropsType, StateType> {
     };
   }
 
-  public componentDidMount() {
-    const popperRoot = document.createElement('div');
-    document.body.appendChild(popperRoot);
-
-    this.setState({
-      popperRoot,
-    });
-  }
-
-  public componentDidUpdate(prevProps: PropsType) {
-    const { searchConversationId } = this.props;
+  public componentDidUpdate(prevProps: PropsType): void {
+    const { searchConversationId, startSearchCounter } = this.props;
 
     // When user chooses to search in a given conversation we focus the field for them
     if (
@@ -88,9 +89,13 @@ export class MainHeader extends React.Component<PropsType, StateType> {
     ) {
       this.setFocus();
     }
+    // When user chooses to start a new search, we focus the field
+    if (startSearchCounter !== prevProps.startSearchCounter) {
+      this.setSelected();
+    }
   }
 
-  public handleOutsideClick = ({ target }: MouseEvent) => {
+  public handleOutsideClick = ({ target }: MouseEvent): void => {
     const { popperRoot, showingAvatarPopup } = this.state;
 
     if (
@@ -102,43 +107,57 @@ export class MainHeader extends React.Component<PropsType, StateType> {
     }
   };
 
-  public handleOutsideKeyUp = (event: KeyboardEvent) => {
+  public handleOutsideKeyDown = (event: KeyboardEvent): void => {
     if (event.key === 'Escape') {
       this.hideAvatarPopup();
     }
   };
 
-  public showAvatarPopup = () => {
+  public showAvatarPopup = (): void => {
+    const popperRoot = document.createElement('div');
+    document.body.appendChild(popperRoot);
+
     this.setState({
       showingAvatarPopup: true,
+      popperRoot,
     });
     document.addEventListener('click', this.handleOutsideClick);
-    document.addEventListener('keydown', this.handleOutsideKeyUp);
+    document.addEventListener('keydown', this.handleOutsideKeyDown);
   };
 
-  public hideAvatarPopup = () => {
-    document.removeEventListener('click', this.handleOutsideClick);
-    document.removeEventListener('keydown', this.handleOutsideKeyUp);
-    this.setState({
-      showingAvatarPopup: false,
-    });
-  };
-
-  public componentWillUnmount() {
+  public hideAvatarPopup = (): void => {
     const { popperRoot } = this.state;
 
-    if (popperRoot) {
+    document.removeEventListener('click', this.handleOutsideClick);
+    document.removeEventListener('keydown', this.handleOutsideKeyDown);
+
+    this.setState({
+      showingAvatarPopup: false,
+      popperRoot: null,
+    });
+
+    if (popperRoot && document.body.contains(popperRoot)) {
       document.body.removeChild(popperRoot);
-      document.removeEventListener('click', this.handleOutsideClick);
-      document.removeEventListener('keydown', this.handleOutsideKeyUp);
+    }
+  };
+
+  public componentWillUnmount(): void {
+    const { popperRoot } = this.state;
+
+    document.removeEventListener('click', this.handleOutsideClick);
+    document.removeEventListener('keydown', this.handleOutsideKeyDown);
+
+    if (popperRoot && document.body.contains(popperRoot)) {
+      document.body.removeChild(popperRoot);
     }
   }
 
-  // tslint:disable-next-line member-ordering
-  public search = debounce((searchTerm: string) => {
+  public search = debounce((searchTerm: string): void => {
     const {
       i18n,
+      ourConversationId,
       ourNumber,
+      ourUuid,
       regionCode,
       searchDiscussions,
       searchMessages,
@@ -148,7 +167,9 @@ export class MainHeader extends React.Component<PropsType, StateType> {
     if (searchDiscussions && !searchConversationId) {
       searchDiscussions(searchTerm, {
         noteToSelf: i18n('noteToSelf').toLowerCase(),
+        ourConversationId,
         ourNumber,
+        ourUuid,
       });
     }
 
@@ -160,7 +181,7 @@ export class MainHeader extends React.Component<PropsType, StateType> {
     }
   }, 200);
 
-  public updateSearch = (event: React.FormEvent<HTMLInputElement>) => {
+  public updateSearch = (event: React.FormEvent<HTMLInputElement>): void => {
     const {
       updateSearchTerm,
       clearConversationSearch,
@@ -190,21 +211,23 @@ export class MainHeader extends React.Component<PropsType, StateType> {
     this.search(searchTerm);
   };
 
-  public clearSearch = () => {
+  public clearSearch = (): void => {
     const { clearSearch } = this.props;
 
     clearSearch();
     this.setFocus();
   };
 
-  public clearConversationSearch = () => {
+  public clearConversationSearch = (): void => {
     const { clearConversationSearch } = this.props;
 
     clearConversationSearch();
     this.setFocus();
   };
 
-  public handleKeyUp = (event: React.KeyboardEvent<HTMLInputElement>) => {
+  public handleKeyDown = (
+    event: React.KeyboardEvent<HTMLInputElement>
+  ): void => {
     const {
       clearConversationSearch,
       clearSearch,
@@ -212,7 +235,20 @@ export class MainHeader extends React.Component<PropsType, StateType> {
       searchTerm,
     } = this.props;
 
-    if (event.key !== 'Escape') {
+    const { ctrlKey, metaKey, key } = event;
+    const commandKey = get(window, 'platform') === 'darwin' && metaKey;
+    const controlKey = get(window, 'platform') !== 'darwin' && ctrlKey;
+    const commandOrCtrl = commandKey || controlKey;
+
+    // On linux, this keyboard combination selects all text
+    if (commandOrCtrl && key === '/') {
+      event.preventDefault();
+      event.stopPropagation();
+
+      return;
+    }
+
+    if (key !== 'Escape') {
       return;
     }
 
@@ -221,9 +257,12 @@ export class MainHeader extends React.Component<PropsType, StateType> {
     } else {
       clearSearch();
     }
+
+    event.preventDefault();
+    event.stopPropagation();
   };
 
-  public handleXButton = () => {
+  public handleXButton = (): void => {
     const {
       searchConversationId,
       clearConversationSearch,
@@ -239,15 +278,19 @@ export class MainHeader extends React.Component<PropsType, StateType> {
     this.setFocus();
   };
 
-  public setFocus = () => {
+  public setFocus = (): void => {
     if (this.inputRef.current) {
-      // @ts-ignore
       this.inputRef.current.focus();
     }
   };
 
-  // tslint:disable-next-line:max-func-body-length
-  public render() {
+  public setSelected = (): void => {
+    if (this.inputRef.current) {
+      this.inputRef.current.select();
+    }
+  };
+
+  public render(): JSX.Element {
     const {
       avatarPath,
       color,
@@ -255,6 +298,7 @@ export class MainHeader extends React.Component<PropsType, StateType> {
       name,
       phoneNumber,
       profileName,
+      title,
       searchConversationId,
       searchConversationName,
       searchTerm,
@@ -279,6 +323,7 @@ export class MainHeader extends React.Component<PropsType, StateType> {
                 name={name}
                 phoneNumber={phoneNumber}
                 profileName={profileName}
+                title={title}
                 size={28}
                 innerRef={ref}
                 onClick={this.showAvatarPopup}
@@ -298,6 +343,7 @@ export class MainHeader extends React.Component<PropsType, StateType> {
                       name={name}
                       phoneNumber={phoneNumber}
                       profileName={profileName}
+                      title={title}
                       avatarPath={avatarPath}
                       size={28}
                       onViewPreferences={() => {
@@ -320,6 +366,9 @@ export class MainHeader extends React.Component<PropsType, StateType> {
             <button
               className="module-main-header__search__in-conversation-pill"
               onClick={this.clearSearch}
+              tabIndex={-1}
+              type="button"
+              aria-label={i18n('clearSearch')}
             >
               <div className="module-main-header__search__in-conversation-pill__avatar-container">
                 <div className="module-main-header__search__in-conversation-pill__avatar" />
@@ -330,6 +379,9 @@ export class MainHeader extends React.Component<PropsType, StateType> {
             <button
               className="module-main-header__search__icon"
               onClick={this.setFocus}
+              tabIndex={-1}
+              type="button"
+              aria-label={i18n('search')}
             />
           )}
           <input
@@ -346,15 +398,17 @@ export class MainHeader extends React.Component<PropsType, StateType> {
             )}
             placeholder={placeholder}
             dir="auto"
-            onKeyUp={this.handleKeyUp}
+            onKeyDown={this.handleKeyDown}
             value={searchTerm}
             onChange={this.updateSearch}
           />
           {searchTerm ? (
-            <div
-              role="button"
+            <button
+              tabIndex={-1}
               className="module-main-header__search__cancel-icon"
               onClick={this.handleXButton}
+              type="button"
+              aria-label={i18n('cancel')}
             />
           ) : null}
         </div>

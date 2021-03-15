@@ -1,13 +1,14 @@
-/* global crypto */
+// Copyright 2018-2020 Signal Messenger, LLC
+// SPDX-License-Identifier: AGPL-3.0-only
+
+/* global window */
 
 const { isFunction, isNumber } = require('lodash');
-const { createLastMessageUpdate } = require('../../../ts/types/Conversation');
-const { arrayBufferToBase64, base64ToArrayBuffer } = require('../crypto');
-
-async function computeHash(arraybuffer) {
-  const hash = await crypto.subtle.digest({ name: 'SHA-512' }, arraybuffer);
-  return arrayBufferToBase64(hash);
-}
+const {
+  arrayBufferToBase64,
+  base64ToArrayBuffer,
+  computeHash,
+} = require('../../../ts/Crypto');
 
 function buildAvatarUpdater({ field }) {
   return async (conversation, data, options = {}) => {
@@ -16,15 +17,24 @@ function buildAvatarUpdater({ field }) {
     }
 
     const avatar = conversation[field];
-    const { writeNewAttachmentData, deleteAttachmentData } = options;
-    if (!isFunction(writeNewAttachmentData)) {
-      throw new Error(
-        'Conversation.buildAvatarUpdater: writeNewAttachmentData must be a function'
-      );
-    }
+    const {
+      deleteAttachmentData,
+      doesAttachmentExist,
+      writeNewAttachmentData,
+    } = options;
     if (!isFunction(deleteAttachmentData)) {
       throw new Error(
         'Conversation.buildAvatarUpdater: deleteAttachmentData must be a function'
+      );
+    }
+    if (!isFunction(doesAttachmentExist)) {
+      throw new Error(
+        'Conversation.buildAvatarUpdater: deleteAttachmentData must be a function'
+      );
+    }
+    if (!isFunction(writeNewAttachmentData)) {
+      throw new Error(
+        'Conversation.buildAvatarUpdater: writeNewAttachmentData must be a function'
       );
     }
 
@@ -41,8 +51,14 @@ function buildAvatarUpdater({ field }) {
     }
 
     const { hash, path } = avatar;
+    const exists = await doesAttachmentExist(path);
+    if (!exists) {
+      window.log.warn(
+        `Conversation.buildAvatarUpdater: attachment ${path} did not exist`
+      );
+    }
 
-    if (hash === newHash) {
+    if (exists && hash === newHash) {
       return conversation;
     }
 
@@ -143,7 +159,7 @@ module.exports = {
   arrayBufferToBase64,
   base64ToArrayBuffer,
   computeHash,
-  createLastMessageUpdate,
+
   deleteExternalFiles,
   maybeUpdateAvatar,
   maybeUpdateProfileAvatar,

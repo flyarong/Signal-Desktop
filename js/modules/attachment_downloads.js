@@ -1,5 +1,7 @@
+// Copyright 2019-2020 Signal Messenger, LLC
+// SPDX-License-Identifier: AGPL-3.0-only
+
 /* global
-  ConversationController,
   Whisper,
   Signal,
   setTimeout,
@@ -8,7 +10,6 @@
 */
 
 const { isFunction, isNumber, omit } = require('lodash');
-const { computeHash } = require('./types/conversation');
 const getGuid = require('uuid/v4');
 const {
   getMessageById,
@@ -18,8 +19,9 @@ const {
   saveAttachmentDownloadJob,
   saveMessage,
   setAttachmentDownloadJobPending,
-} = require('./data');
-const { stringFromBytes } = require('./crypto');
+} = require('../../ts/sql/Client').default;
+const { downloadAttachment } = require('../../ts/util/downloadAttachment');
+const { stringFromBytes } = require('../../ts/Crypto');
 
 module.exports = {
   start,
@@ -57,6 +59,7 @@ async function start(options = {}) {
     throw new Error('attachment_downloads/start: logger must be provided!');
   }
 
+  logger.info('attachment_downloads/start: enabling');
   enabled = true;
   await resetAttachmentDownloadPending();
 
@@ -64,6 +67,7 @@ async function start(options = {}) {
 }
 
 async function stop() {
+  logger.info('attachment_downloads/stop: disabling');
   enabled = false;
   if (timeout) {
     clearTimeout(timeout);
@@ -121,6 +125,7 @@ async function _tick() {
 
 async function _maybeStartJob() {
   if (!enabled) {
+    logger.info('attachment_downloads/_maybeStartJob: not enabled, returning');
     return;
   }
 
@@ -166,6 +171,8 @@ async function _runJob(job) {
       );
     }
 
+    logger.info(`attachment_downloads/_runJob for job id ${id}`);
+
     const found =
       MessageController.getById(messageId) ||
       (await getMessageById(messageId, {
@@ -181,33 +188,29 @@ async function _runJob(job) {
     const pending = true;
     await setAttachmentDownloadJobPending(id, pending);
 
-    let downloaded;
     const messageReceiver = getMessageReceiver();
     if (!messageReceiver) {
       throw new Error('_runJob: messageReceiver not found');
     }
 
-    try {
-      downloaded = await messageReceiver.downloadAttachment(attachment);
-    } catch (error) {
-      // Attachments on the server expire after 30 days, then start returning 404
-      if (error && error.code === 404) {
-        logger.warn(
-          `_runJob: Got 404 from server, marking attachment ${
-            attachment.id
-          } from message ${message.idForLogging()} as permanent error`
-        );
+    const downloaded = await downloadAttachment(attachment);
 
-        await _finishJob(message, id);
-        await _addAttachmentToMessage(
-          message,
-          _markAttachmentAsError(attachment),
-          { type, index }
-        );
+    if (!downloaded) {
+      logger.warn(
+        `_runJob: Got 404 from server for CDN ${
+          attachment.cdnNumber
+        }, marking attachment ${
+          attachment.cdnId || attachment.cdnKey
+        } from message ${message.idForLogging()} as permanent error`
+      );
 
-        return;
-      }
-      throw error;
+      await _finishJob(message, id);
+      await _addAttachmentToMessage(
+        message,
+        _markAttachmentAsError(attachment),
+        { type, index }
+      );
+      return;
     }
 
     const upgradedAttachment = await Signal.Migrations.processNewAttachment(
@@ -256,6 +259,7 @@ async function _runJob(job) {
 
 async function _finishJob(message, id) {
   if (message) {
+    logger.info(`attachment_downloads/_finishJob for job id: ${id}`);
     await saveMessage(message.attributes, {
       Message: Whisper.Message,
     });
@@ -411,32 +415,6 @@ async function _addAttachmentToMessage(message, attachment, { type, index }) {
 
     message.set({ quote: newQuote });
 
-    return;
-  }
-
-  if (type === 'group-avatar') {
-    const conversationId = message.get('conversationId');
-    const conversation = ConversationController.get(conversationId);
-    if (!conversation) {
-      logger.warn("_addAttachmentToMessage: conversation didn't exist");
-      return;
-    }
-
-    const existingAvatar = conversation.get('avatar');
-    if (existingAvatar && existingAvatar.path) {
-      await Signal.Migrations.deleteAttachmentData(existingAvatar.path);
-    }
-
-    const loadedAttachment = await Signal.Migrations.loadAttachmentData(
-      attachment
-    );
-    conversation.set({
-      avatar: {
-        ...attachment,
-        hash: await computeHash(loadedAttachment.data),
-      },
-    });
-    Signal.Data.updateConversation(conversationId, conversation.attributes);
     return;
   }
 

@@ -1,3 +1,6 @@
+// Copyright 2019-2020 Signal Messenger, LLC
+// SPDX-License-Identifier: AGPL-3.0-only
+
 import { connect } from 'react-redux';
 import { createSelector } from 'reselect';
 import { get } from 'lodash';
@@ -34,15 +37,16 @@ const mapStateToProps = (state: StateType, props: ExternalProps) => {
     throw new Error(`Conversation id ${id} not found!`);
   }
 
-  const { draftText } = conversation;
+  const { draftText, draftBodyRanges } = conversation;
 
   const receivedPacks = getReceivedStickerPacks(state);
   const installedPacks = getInstalledStickerPacks(state);
   const blessedPacks = getBlessedStickerPacks(state);
   const knownPacks = getKnownStickerPacks(state);
 
-  const recentStickers = getRecentStickers(state);
   const installedPack = getRecentlyInstalledStickerPack(state);
+
+  const recentStickers = getRecentStickers(state);
   const showIntroduction = get(
     state.items,
     ['showStickersIntroduction'],
@@ -57,7 +61,8 @@ const mapStateToProps = (state: StateType, props: ExternalProps) => {
   return {
     // Base
     i18n: getIntl(state),
-    startingText: draftText,
+    draftText,
+    draftBodyRanges,
     // Emojis
     recentEmojis,
     skinTone: get(state, ['items', 'skinTone'], 0),
@@ -70,6 +75,9 @@ const mapStateToProps = (state: StateType, props: ExternalProps) => {
     recentStickers,
     showIntroduction,
     showPickerHint,
+    // Message Requests
+    ...conversation,
+    conversationType: conversation.type,
   };
 };
 
@@ -80,9 +88,10 @@ const dispatchPropsMap = {
     mapDispatchToProps.removeItem('showStickersIntroduction'),
   clearShowPickerHint: () =>
     mapDispatchToProps.removeItem('showStickerPickerHint'),
-  onPickEmoji: mapDispatchToProps.useEmoji,
+  onPickEmoji: mapDispatchToProps.onUseEmoji,
 };
 
 const smart = connect(mapStateToProps, dispatchPropsMap);
 
-export const SmartCompositionArea = smart(CompositionArea);
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export const SmartCompositionArea = smart(CompositionArea as any);

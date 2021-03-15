@@ -1,3 +1,6 @@
+// Copyright 2018-2020 Signal Messenger, LLC
+// SPDX-License-Identifier: AGPL-3.0-only
+
 const { assert } = require('chai');
 
 const SignalMenu = require('../../app/menu');
@@ -46,18 +49,21 @@ describe('SignalMenu', () => {
                 },
               };
               const options = {
+                isBeta: false,
+                openContactUs: null,
                 openForums: null,
-                openNewBugForm: null,
+                openJoinTheBeta: null,
                 openReleaseNotes: null,
                 openSupportPage: null,
                 platform,
                 includeSetup,
                 setupAsNewDevice: null,
                 setupAsStandalone: null,
-                setupWithImport: null,
                 showAbout: null,
                 showDebugLog: null,
+                showKeyboardShortcuts: null,
                 showSettings: null,
+                showStickerCreator: null,
                 showWindow: null,
               };
               const appLocale = 'en';

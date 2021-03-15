@@ -1,4 +1,7 @@
-// tslint:disable no-console
+// Copyright 2018-2020 Signal Messenger, LLC
+// SPDX-License-Identifier: AGPL-3.0-only
+
+/* eslint-disable no-console */
 
 import { readFileSync } from 'fs';
 
@@ -8,7 +11,7 @@ import { ExceptionType } from './types';
 
 export const ENCODING = 'utf8';
 
-export function loadJSON(target: string) {
+export function loadJSON<T>(target: string): T {
   try {
     const contents = readFileSync(target, ENCODING);
 
@@ -19,6 +22,8 @@ export function loadJSON(target: string) {
   }
 }
 
-export function sortExceptions(exceptions: Array<ExceptionType>) {
+export function sortExceptions(
+  exceptions: Array<ExceptionType>
+): Array<ExceptionType> {
   return orderBy(exceptions, ['path', 'lineNumber', 'rule']);
 }

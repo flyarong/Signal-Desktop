@@ -17,6 +17,7 @@ ts/protobuf/*.d.ts
 ts/protobuf/*.js
 stylesheets/manifest.css
 ts/util/lint/exceptions.json
+sticker-creator/dist/**
 
 # Third-party files
 node_modules/**
@@ -24,7 +25,6 @@ components/**
 js/curve/**
 js/Mp3LameEncoder.min.js
 js/WebAudioRecorderMp3.js
-js/libsignal-protocol-worker.js
 libtextsecure/libsignal-protocol.js
 libtextsecure/test/blanket_mocha.js
 test/blanket_mocha.js

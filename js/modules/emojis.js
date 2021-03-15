@@ -1,11 +1,12 @@
+// Copyright 2019-2020 Signal Messenger, LLC
+// SPDX-License-Identifier: AGPL-3.0-only
+
 const { take } = require('lodash');
-const { getRecentEmojis } = require('./data');
-const { replaceColons } = require('../../ts/components/emoji/lib');
+const { getRecentEmojis } = require('../../ts/sql/Client').default;
 
 module.exports = {
   getInitialState,
   load,
-  replaceColons,
 };
 
 let initialState = null;

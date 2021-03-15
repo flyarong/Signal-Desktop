@@ -1,3 +1,6 @@
+// Copyright 2019-2021 Signal Messenger, LLC
+// SPDX-License-Identifier: AGPL-3.0-only
+
 import React from 'react';
 
 import { MessageBody } from './conversation/MessageBody';
@@ -8,10 +11,10 @@ import { SizeClassType } from './emoji/lib';
 
 import { LocalizerType, RenderTextCallbackType } from '../types/Util';
 
-interface Props {
+export type Props = {
   text: string;
   i18n: LocalizerType;
-}
+};
 
 const renderNewLines: RenderTextCallbackType = ({ text, key }) => (
   <AddNewLines key={key} text={text} />
@@ -38,9 +41,9 @@ const renderEmoji = ({
 );
 
 export class MessageBodyHighlight extends React.Component<Props> {
-  public render() {
+  public render(): JSX.Element | Array<JSX.Element> {
     const { text, i18n } = this.props;
-    const results: Array<any> = [];
+    const results: Array<JSX.Element> = [];
     const FIND_BEGIN_END = /<<left>>(.+?)<<right>>/g;
 
     let match = FIND_BEGIN_END.exec(text);
@@ -49,12 +52,7 @@ export class MessageBodyHighlight extends React.Component<Props> {
 
     if (!match) {
       return (
-        <MessageBody
-          disableJumbomoji={true}
-          disableLinks={true}
-          text={text}
-          i18n={i18n}
-        />
+        <MessageBody disableJumbomoji disableLinks text={text} i18n={i18n} />
       );
     }
 
@@ -63,11 +61,12 @@ export class MessageBodyHighlight extends React.Component<Props> {
     while (match) {
       if (last < match.index) {
         const beforeText = text.slice(last, match.index);
+        count += 1;
         results.push(
           renderEmoji({
             text: beforeText,
             sizeClass,
-            key: count++,
+            key: count,
             i18n,
             renderNonEmoji: renderNewLines,
           })
@@ -75,29 +74,30 @@ export class MessageBodyHighlight extends React.Component<Props> {
       }
 
       const [, toHighlight] = match;
+      count += 2;
       results.push(
-        <span className="module-message-body__highlight" key={count++}>
+        <span className="module-message-body__highlight" key={count - 1}>
           {renderEmoji({
             text: toHighlight,
             sizeClass,
-            key: count++,
+            key: count,
             i18n,
             renderNonEmoji: renderNewLines,
           })}
         </span>
       );
 
-      // @ts-ignore
       last = FIND_BEGIN_END.lastIndex;
       match = FIND_BEGIN_END.exec(text);
     }
 
     if (last < text.length) {
+      count += 1;
       results.push(
         renderEmoji({
           text: text.slice(last),
           sizeClass,
-          key: count++,
+          key: count,
           i18n,
           renderNonEmoji: renderNewLines,
         })
